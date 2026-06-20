@@ -32,6 +32,7 @@ export type AdminMenuItem = Tables<'menu_items'>;
 export type AdminServiceCategory = Tables<'service_categories'>;
 export type AdminServiceSubcategory = Tables<'service_subcategories'>;
 export type AdminBusinessPartner = Tables<'business_partners'>;
+export type AdminPartnerUser = Tables<'partner_users'>;
 export type AdminFoodOrder = Tables<'food_orders'> & {
   latest_rider_location_updated_at?: string | null;
 };
@@ -61,6 +62,7 @@ export type MenuItemInput = Pick<
 export type BusinessPartnerInput = Pick<
   TablesInsert<'business_partners'>,
   | 'address'
+  | 'business_hours'
   | 'category_id'
   | 'delivery_fee_label'
   | 'description'
@@ -71,10 +73,25 @@ export type BusinessPartnerInput = Pick<
   | 'latitude'
   | 'longitude'
   | 'name'
+  | 'owner_email'
+  | 'owner_name'
+  | 'owner_phone'
+  | 'partner_notes'
   | 'phone'
   | 'rating'
   | 'restaurant_id'
+  | 'status'
   | 'subcategory_id'
+>;
+export type PartnerUserInput = Pick<
+  TablesInsert<'partner_users'>,
+  | 'email'
+  | 'full_name'
+  | 'is_active'
+  | 'partner_id'
+  | 'phone'
+  | 'role'
+  | 'user_id'
 >;
 
 const restaurantImageBucket = 'restaurant-images';
@@ -303,6 +320,24 @@ export async function getBusinessPartners() {
   return data ?? [];
 }
 
+export async function getBusinessPartnerById(partnerId: string) {
+  const { data, error } = await supabase
+    .from('business_partners')
+    .select('*')
+    .eq('id', partnerId)
+    .maybeSingle();
+
+  if (error) {
+    throw error;
+  }
+
+  if (!data) {
+    throw new Error(`Partner shop ${partnerId} was not found.`);
+  }
+
+  return data;
+}
+
 export async function createBusinessPartner(input: BusinessPartnerInput) {
   const { data, error } = await supabase
     .from('business_partners')
@@ -338,6 +373,47 @@ export async function updateBusinessPartner(
 
   if (!data) {
     throw new Error(`Partner shop ${partnerId} was not found.`);
+  }
+
+  return data;
+}
+
+export async function getPartnerUsers(partnerId?: string) {
+  let query = supabase
+    .from('partner_users')
+    .select('*')
+    .order('created_at', { ascending: false });
+
+  if (partnerId) {
+    query = query.eq('partner_id', partnerId);
+  }
+
+  const { data, error } = await query;
+
+  if (error) {
+    throw error;
+  }
+
+  return data ?? [];
+}
+
+export async function assignPartnerUserFoundation(input: PartnerUserInput) {
+  const payload = {
+    ...input,
+    updated_at: new Date().toISOString(),
+  };
+  const { data, error } = await supabase
+    .from('partner_users')
+    .upsert(payload, { onConflict: 'user_id,partner_id' })
+    .select('*')
+    .maybeSingle();
+
+  if (error) {
+    throw error;
+  }
+
+  if (!data) {
+    throw new Error('Supabase did not return the partner user assignment.');
   }
 
   return data;

@@ -21,14 +21,17 @@ import {
   foodOrderStatuses,
   getAllBookings,
   getAllFoodOrders,
+  getBusinessPartnerById,
   getBusinessPartners,
   getFoodOrderItems,
   getMenuCategories,
   getMenuItems,
+  getPartnerUsers,
   getRestaurants,
   getRiders,
   getServiceCategories,
   getServiceSubcategories,
+  assignPartnerUserFoundation,
   updateBusinessPartner,
   updateBookingStatus,
   updateFoodOrderStatus,
@@ -46,12 +49,14 @@ import {
   type AdminFoodOrderItem,
   type AdminMenuCategory,
   type AdminMenuItem,
+  type AdminPartnerUser,
   type AdminRestaurant,
   type AdminRider,
   type AdminServiceCategory,
   type AdminServiceSubcategory,
   type BusinessPartnerInput,
   type MenuItemInput,
+  type PartnerUserInput,
   type RestaurantInput,
 } from './services/bookings';
 
@@ -102,6 +107,7 @@ type MenuItemFormState = {
 };
 type PartnerFormState = {
   address: string;
+  businessHours: string;
   categoryId: string;
   deliveryFeeLabel: string;
   description: string;
@@ -112,10 +118,24 @@ type PartnerFormState = {
   latitude: string;
   longitude: string;
   name: string;
+  ownerEmail: string;
+  ownerName: string;
+  ownerPhone: string;
+  partnerNotes: string;
   phone: string;
   rating: string;
   restaurantId: string;
+  status: string;
   subcategoryId: string;
+};
+type PartnerUserFormState = {
+  email: string;
+  fullName: string;
+  isActive: boolean;
+  partnerId: string;
+  phone: string;
+  role: string;
+  userId: string;
 };
 
 const emptyRestaurantForm: RestaurantFormState = {
@@ -142,6 +162,7 @@ const emptyMenuItemForm: MenuItemFormState = {
 
 const emptyPartnerForm: PartnerFormState = {
   address: '',
+  businessHours: '',
   categoryId: '',
   deliveryFeeLabel: '',
   description: '',
@@ -152,10 +173,25 @@ const emptyPartnerForm: PartnerFormState = {
   latitude: '',
   longitude: '',
   name: '',
+  ownerEmail: '',
+  ownerName: '',
+  ownerPhone: '',
+  partnerNotes: '',
   phone: '',
   rating: '',
   restaurantId: '',
+  status: 'active',
   subcategoryId: '',
+};
+
+const emptyPartnerUserForm: PartnerUserFormState = {
+  email: '',
+  fullName: '',
+  isActive: true,
+  partnerId: '',
+  phone: '',
+  role: 'owner',
+  userId: '',
 };
 
 export function App() {
@@ -174,10 +210,13 @@ export function App() {
   const [serviceCategories, setServiceCategories] = useState<AdminServiceCategory[]>([]);
   const [serviceSubcategories, setServiceSubcategories] = useState<AdminServiceSubcategory[]>([]);
   const [businessPartners, setBusinessPartners] = useState<AdminBusinessPartner[]>([]);
+  const [partnerUsers, setPartnerUsers] = useState<AdminPartnerUser[]>([]);
   const [riders, setRiders] = useState<AdminRider[]>([]);
   const [restaurantForm, setRestaurantForm] = useState<RestaurantFormState>(emptyRestaurantForm);
   const [menuItemForm, setMenuItemForm] = useState<MenuItemFormState>(emptyMenuItemForm);
   const [partnerForm, setPartnerForm] = useState<PartnerFormState>(emptyPartnerForm);
+  const [partnerUserForm, setPartnerUserForm] = useState<PartnerUserFormState>(emptyPartnerUserForm);
+  const [previewPartnerId, setPreviewPartnerId] = useState('');
   const [editingRestaurantId, setEditingRestaurantId] = useState('');
   const [editingMenuItemId, setEditingMenuItemId] = useState('');
   const [editingPartnerId, setEditingPartnerId] = useState('');
@@ -193,6 +232,7 @@ export function App() {
   const [savingRestaurantId, setSavingRestaurantId] = useState('');
   const [savingMenuItemId, setSavingMenuItemId] = useState('');
   const [savingPartnerId, setSavingPartnerId] = useState('');
+  const [savingPartnerUserId, setSavingPartnerUserId] = useState('');
   const [savingRestaurantImageId, setSavingRestaurantImageId] = useState('');
   const [savingMenuItemImageId, setSavingMenuItemImageId] = useState('');
   const [uploadingRestaurantImageId, setUploadingRestaurantImageId] = useState('');
@@ -348,14 +388,17 @@ export function App() {
     setMarketplaceErrorMessage('');
 
     try {
-      const [categoryRows, subcategoryRows, partnerRows] = await Promise.all([
+      const [categoryRows, subcategoryRows, partnerRows, partnerUserRows] = await Promise.all([
         getServiceCategories(),
         getServiceSubcategories(),
         getBusinessPartners(),
+        getPartnerUsers(),
       ]);
       setServiceCategories(categoryRows);
       setServiceSubcategories(subcategoryRows);
       setBusinessPartners(partnerRows);
+      setPartnerUsers(partnerUserRows);
+      setPreviewPartnerId((currentPreviewPartnerId) => currentPreviewPartnerId || partnerRows[0]?.id || '');
     } catch (error) {
       setMarketplaceErrorMessage(`Unable to load marketplace data. ${getErrorMessage(error)}`);
     } finally {
@@ -419,14 +462,17 @@ export function App() {
     }
 
     try {
-      const [marketCategoryRows, marketSubcategoryRows, partnerRows] = await Promise.all([
+      const [marketCategoryRows, marketSubcategoryRows, partnerRows, partnerUserRows] = await Promise.all([
         getServiceCategories(),
         getServiceSubcategories(),
         getBusinessPartners(),
+        getPartnerUsers(),
       ]);
       setServiceCategories(marketCategoryRows);
       setServiceSubcategories(marketSubcategoryRows);
       setBusinessPartners(partnerRows);
+      setPartnerUsers(partnerUserRows);
+      setPreviewPartnerId((currentPreviewPartnerId) => currentPreviewPartnerId || partnerRows[0]?.id || '');
     } catch (error) {
       setMarketplaceErrorMessage(`Unable to load marketplace data. ${getErrorMessage(error)}`);
     } finally {
@@ -756,6 +802,38 @@ export function App() {
     }
   }
 
+  async function handlePartnerUserSave() {
+    setSavingPartnerUserId(partnerUserForm.partnerId || 'new');
+    setMarketplaceMessage('');
+    setMarketplaceErrorMessage('');
+
+    try {
+      const input = getPartnerUserInput(partnerUserForm);
+      await assignPartnerUserFoundation(input);
+      setMarketplaceMessage('Partner user assignment saved.');
+      setPartnerUserForm(emptyPartnerUserForm);
+      await loadMarketplace({ showLoading: false });
+    } catch (error) {
+      setMarketplaceErrorMessage(`Unable to save partner user assignment. ${getErrorMessage(error)}`);
+    } finally {
+      setSavingPartnerUserId('');
+    }
+  }
+
+  async function handlePreviewPartnerChange(partnerId: string) {
+    setPreviewPartnerId(partnerId);
+
+    if (!partnerId) {
+      return;
+    }
+
+    try {
+      await getBusinessPartnerById(partnerId);
+    } catch (error) {
+      setMarketplaceErrorMessage(`Unable to load partner preview. ${getErrorMessage(error)}`);
+    }
+  }
+
   useEffect(() => {
     if (!adminAuthState.isAdmin) {
       return;
@@ -832,9 +910,12 @@ export function App() {
   const partnerFormSubcategories = serviceSubcategories.filter(
     (subcategory) => subcategory.category_id === partnerForm.categoryId
   );
+  const previewPartner = businessPartners.find((partner) => partner.id === previewPartnerId) ?? null;
+  const previewPartnerUsers = partnerUsers.filter((user) => user.partner_id === previewPartnerId);
   const isRestaurantSaving = savingRestaurantId === (editingRestaurantId || 'new');
   const isMenuItemSaving = savingMenuItemId === (editingMenuItemId || 'new');
   const isPartnerSaving = savingPartnerId === (editingPartnerId || 'new');
+  const isPartnerUserSaving = savingPartnerUserId === (partnerUserForm.partnerId || 'new');
 
   if (isAdminAuthLoading) {
     return (
@@ -914,6 +995,11 @@ export function App() {
           <p className="empty-state">Loading marketplace data...</p>
         ) : (
           <div className="food-management">
+            <div className="section-nav-row" aria-label="Marketplace admin sections">
+              <span>Admin Marketplace</span>
+              <span>Partners</span>
+              <span>Partner Dashboard Preview / My Shop</span>
+            </div>
             <div className="food-management-section">
               <div className="section-title-row">
                 <h3>Service categories</h3>
@@ -1099,6 +1185,36 @@ export function App() {
                     />
                   </label>
                   <label className="form-field">
+                    <span>Owner name</span>
+                    <input
+                      type="text"
+                      value={partnerForm.ownerName}
+                      onChange={(event) =>
+                        setPartnerForm((current) => ({ ...current, ownerName: event.target.value }))
+                      }
+                    />
+                  </label>
+                  <label className="form-field">
+                    <span>Owner email</span>
+                    <input
+                      type="email"
+                      value={partnerForm.ownerEmail}
+                      onChange={(event) =>
+                        setPartnerForm((current) => ({ ...current, ownerEmail: event.target.value }))
+                      }
+                    />
+                  </label>
+                  <label className="form-field">
+                    <span>Owner phone</span>
+                    <input
+                      type="tel"
+                      value={partnerForm.ownerPhone}
+                      onChange={(event) =>
+                        setPartnerForm((current) => ({ ...current, ownerPhone: event.target.value }))
+                      }
+                    />
+                  </label>
+                  <label className="form-field">
                     <span>Rating</span>
                     <input
                       max="5"
@@ -1168,6 +1284,36 @@ export function App() {
                     />
                   </label>
                   <label className="form-field">
+                    <span>Business hours</span>
+                    <input
+                      placeholder="8:00 AM - 8:00 PM"
+                      type="text"
+                      value={partnerForm.businessHours}
+                      onChange={(event) =>
+                        setPartnerForm((current) => ({
+                          ...current,
+                          businessHours: event.target.value,
+                        }))
+                      }
+                    />
+                  </label>
+                  <label className="form-field">
+                    <span>Status</span>
+                    <select
+                      value={partnerForm.status}
+                      onChange={(event) =>
+                        setPartnerForm((current) => ({
+                          ...current,
+                          status: event.target.value,
+                        }))
+                      }>
+                      <option value="active">Active</option>
+                      <option value="pending">Pending</option>
+                      <option value="paused">Paused</option>
+                      <option value="suspended">Suspended</option>
+                    </select>
+                  </label>
+                  <label className="form-field">
                     <span>Image URL</span>
                     <input
                       placeholder="https://example.com/image.jpg"
@@ -1177,6 +1323,18 @@ export function App() {
                         setPartnerForm((current) => ({
                           ...current,
                           imageUrl: event.target.value,
+                        }))
+                      }
+                    />
+                  </label>
+                  <label className="form-field wide-field">
+                    <span>Partner notes</span>
+                    <textarea
+                      value={partnerForm.partnerNotes}
+                      onChange={(event) =>
+                        setPartnerForm((current) => ({
+                          ...current,
+                          partnerNotes: event.target.value,
                         }))
                       }
                     />
@@ -1233,6 +1391,9 @@ export function App() {
                             {partner.delivery_fee_label || 'No delivery fee label'}
                           </p>
                           <p className="entity-meta">
+                            Owner: {partner.owner_name || 'No owner'} - Status: {partner.status}
+                          </p>
+                          <p className="entity-meta">
                             Restaurant link: {getRestaurantName(partner.restaurant_id, restaurants)}
                           </p>
                           <span className={partner.is_active && partner.is_open ? 'status-pill active' : 'status-pill'}>
@@ -1254,6 +1415,184 @@ export function App() {
                     </article>
                   ))}
                 </div>
+              )}
+            </div>
+
+            <div className="food-management-section">
+              <div className="section-title-row">
+                <h3>Partner user assignment foundation</h3>
+                <span className="count-pill">{partnerUsers.length} users</span>
+              </div>
+
+              <form
+                className="management-form"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  void handlePartnerUserSave();
+                }}>
+                <div className="form-grid">
+                  <label className="form-field">
+                    <span>Partner shop</span>
+                    <select
+                      required
+                      value={partnerUserForm.partnerId}
+                      onChange={(event) =>
+                        setPartnerUserForm((current) => ({
+                          ...current,
+                          partnerId: event.target.value,
+                        }))
+                      }>
+                      <option value="">Choose partner</option>
+                      {businessPartners.map((partner) => (
+                        <option key={partner.id} value={partner.id}>
+                          {partner.name}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="form-field">
+                    <span>Auth user ID</span>
+                    <input
+                      placeholder="Optional Supabase auth user UUID"
+                      type="text"
+                      value={partnerUserForm.userId}
+                      onChange={(event) =>
+                        setPartnerUserForm((current) => ({ ...current, userId: event.target.value }))
+                      }
+                    />
+                  </label>
+                  <label className="form-field">
+                    <span>Role</span>
+                    <select
+                      value={partnerUserForm.role}
+                      onChange={(event) =>
+                        setPartnerUserForm((current) => ({ ...current, role: event.target.value }))
+                      }>
+                      <option value="owner">Owner</option>
+                      <option value="manager">Manager</option>
+                      <option value="staff">Staff</option>
+                    </select>
+                  </label>
+                  <label className="form-field">
+                    <span>Full name</span>
+                    <input
+                      type="text"
+                      value={partnerUserForm.fullName}
+                      onChange={(event) =>
+                        setPartnerUserForm((current) => ({ ...current, fullName: event.target.value }))
+                      }
+                    />
+                  </label>
+                  <label className="form-field">
+                    <span>Email</span>
+                    <input
+                      type="email"
+                      value={partnerUserForm.email}
+                      onChange={(event) =>
+                        setPartnerUserForm((current) => ({ ...current, email: event.target.value }))
+                      }
+                    />
+                  </label>
+                  <label className="form-field">
+                    <span>Phone</span>
+                    <input
+                      type="tel"
+                      value={partnerUserForm.phone}
+                      onChange={(event) =>
+                        setPartnerUserForm((current) => ({ ...current, phone: event.target.value }))
+                      }
+                    />
+                  </label>
+                </div>
+                <label className="checkbox-field">
+                  <input
+                    checked={partnerUserForm.isActive}
+                    type="checkbox"
+                    onChange={(event) =>
+                      setPartnerUserForm((current) => ({
+                        ...current,
+                        isActive: event.target.checked,
+                      }))
+                    }
+                  />
+                  <span>Partner user is active</span>
+                </label>
+                <button className="primary-action-button" disabled={isPartnerUserSaving} type="submit">
+                  {isPartnerUserSaving ? 'Saving...' : 'Save partner user'}
+                </button>
+              </form>
+
+              {partnerUsers.length === 0 ? (
+                <p className="empty-state">No partner users assigned yet.</p>
+              ) : (
+                <div className="entity-list compact-entity-grid">
+                  {partnerUsers.map((partnerUser) => (
+                    <article className="entity-card" key={partnerUser.id}>
+                      <div>
+                        <h4>{partnerUser.full_name || partnerUser.email || 'Partner user'}</h4>
+                        <p className="entity-meta">
+                          {getPartnerName(partnerUser.partner_id, businessPartners)} - {partnerUser.role}
+                        </p>
+                        <span className={partnerUser.is_active ? 'status-pill active' : 'status-pill'}>
+                          {partnerUser.is_active ? 'Active' : 'Inactive'}
+                        </span>
+                      </div>
+                    </article>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="food-management-section">
+              <div className="section-title-row">
+                <h3>Partner Dashboard Preview / My Shop</h3>
+                <label className="filter-control compact-filter">
+                  <span>Preview partner</span>
+                  <select
+                    value={previewPartnerId}
+                    onChange={(event) => void handlePreviewPartnerChange(event.target.value)}>
+                    <option value="">Choose partner</option>
+                    {businessPartners.map((partner) => (
+                      <option key={partner.id} value={partner.id}>
+                        {partner.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+
+              {previewPartner ? (
+                <article className="partner-preview-card">
+                  <div className="partner-preview-header">
+                    <div>
+                      <p className="eyebrow">My Shop</p>
+                      <h3>{previewPartner.name}</h3>
+                      <p className="entity-meta">
+                        {getServiceCategoryName(previewPartner.category_id, serviceCategories)} -{' '}
+                        {getServiceSubcategoryName(previewPartner.subcategory_id, serviceSubcategories)}
+                      </p>
+                    </div>
+                    <span className={previewPartner.is_open ? 'status-pill active' : 'status-pill'}>
+                      {previewPartner.is_open ? 'Open' : 'Closed'}
+                    </span>
+                  </div>
+                  <div className="partner-preview-grid">
+                    <PreviewField label="Description" value={previewPartner.description} />
+                    <PreviewField label="Address" value={previewPartner.address} />
+                    <PreviewField label="Phone" value={previewPartner.phone} />
+                    <PreviewField label="Business hours" value={previewPartner.business_hours} />
+                    <PreviewField label="Owner" value={previewPartner.owner_name} />
+                    <PreviewField label="Owner email" value={previewPartner.owner_email} />
+                    <PreviewField label="Active status" value={previewPartner.is_active ? 'Active' : 'Inactive'} />
+                    <PreviewField label="Marketplace status" value={previewPartner.status} />
+                  </div>
+                  <p className="empty-state">Product/menu management coming in Phase 8D.</p>
+                  <p className="entity-meta">
+                    Preview users: {previewPartnerUsers.length || 'No linked partner users yet.'}
+                  </p>
+                </article>
+              ) : (
+                <p className="empty-state">Choose a partner shop to preview the partner dashboard.</p>
               )}
             </div>
           </div>
@@ -2028,6 +2367,15 @@ function StatCard({ label, value }: { label: string; value: string }) {
   );
 }
 
+function PreviewField({ label, value }: { label: string; value: string | null | undefined }) {
+  return (
+    <div className="preview-field">
+      <span>{label}</span>
+      <strong>{value || 'Not set'}</strong>
+    </div>
+  );
+}
+
 function AddressWithCoordinates({
   coordinates,
   label,
@@ -2177,6 +2525,10 @@ function getRestaurantName(restaurantId: string | null, restaurants: AdminRestau
   );
 }
 
+function getPartnerName(partnerId: string, partners: AdminBusinessPartner[]) {
+  return partners.find((partner) => partner.id === partnerId)?.name ?? 'Unknown partner';
+}
+
 function getServiceCategoryName(
   categoryId: string | null,
   categories: AdminServiceCategory[]
@@ -2237,6 +2589,7 @@ function getMenuItemForm(item: AdminMenuItem): MenuItemFormState {
 function getPartnerForm(partner: AdminBusinessPartner): PartnerFormState {
   return {
     address: partner.address ?? '',
+    businessHours: partner.business_hours ?? '',
     categoryId: partner.category_id ?? '',
     deliveryFeeLabel: partner.delivery_fee_label ?? '',
     description: partner.description ?? '',
@@ -2247,9 +2600,14 @@ function getPartnerForm(partner: AdminBusinessPartner): PartnerFormState {
     latitude: partner.latitude === null ? '' : String(partner.latitude),
     longitude: partner.longitude === null ? '' : String(partner.longitude),
     name: partner.name,
+    ownerEmail: partner.owner_email ?? '',
+    ownerName: partner.owner_name ?? '',
+    ownerPhone: partner.owner_phone ?? '',
+    partnerNotes: partner.partner_notes ?? '',
     phone: partner.phone ?? '',
     rating: partner.rating === null ? '' : String(partner.rating),
     restaurantId: partner.restaurant_id ?? '',
+    status: partner.status,
     subcategoryId: partner.subcategory_id ?? '',
   };
 }
@@ -2286,6 +2644,7 @@ function getMenuItemInput(form: MenuItemFormState): MenuItemInput {
 function getPartnerInput(form: PartnerFormState): BusinessPartnerInput {
   return {
     address: normalizeOptionalText(form.address),
+    business_hours: normalizeOptionalText(form.businessHours),
     category_id: requireText(form.categoryId, 'Marketplace category'),
     delivery_fee_label: normalizeOptionalText(form.deliveryFeeLabel),
     description: normalizeOptionalText(form.description),
@@ -2296,10 +2655,27 @@ function getPartnerInput(form: PartnerFormState): BusinessPartnerInput {
     latitude: normalizeOptionalNumber(form.latitude, 'Latitude'),
     longitude: normalizeOptionalNumber(form.longitude, 'Longitude'),
     name: requireText(form.name, 'Partner shop name'),
+    owner_email: normalizeOptionalText(form.ownerEmail),
+    owner_name: normalizeOptionalText(form.ownerName),
+    owner_phone: normalizeOptionalText(form.ownerPhone),
+    partner_notes: normalizeOptionalText(form.partnerNotes),
     phone: normalizeOptionalText(form.phone),
     rating: normalizeOptionalNumber(form.rating, 'Rating'),
     restaurant_id: normalizeOptionalText(form.restaurantId),
+    status: requireText(form.status, 'Partner status'),
     subcategory_id: normalizeOptionalText(form.subcategoryId),
+  };
+}
+
+function getPartnerUserInput(form: PartnerUserFormState): PartnerUserInput {
+  return {
+    email: normalizeOptionalText(form.email),
+    full_name: normalizeOptionalText(form.fullName),
+    is_active: form.isActive,
+    partner_id: requireText(form.partnerId, 'Partner shop'),
+    phone: normalizeOptionalText(form.phone),
+    role: requireText(form.role, 'Partner role'),
+    user_id: normalizeOptionalText(form.userId),
   };
 }
 

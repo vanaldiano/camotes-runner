@@ -239,6 +239,7 @@ function createSamplePartner(input: {
 
   return {
     address: 'Camotes Island',
+    business_hours: null,
     categoryName: category?.name ?? 'Marketplace',
     categorySlug: category?.slug ?? null,
     category_id: category?.id ?? null,
@@ -253,9 +254,14 @@ function createSamplePartner(input: {
     latitude: null,
     longitude: null,
     name: input.name,
+    owner_email: null,
+    owner_name: null,
+    owner_phone: null,
+    partner_notes: null,
     phone: null,
     rating: input.rating,
     restaurant_id: input.restaurantId ?? null,
+    status: 'active',
     subcategoryName: subcategory?.name ?? 'Partner shop',
     subcategorySlug: subcategory?.slug ?? null,
     subcategory_id: subcategory?.id ?? null,

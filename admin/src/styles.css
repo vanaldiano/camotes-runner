@@ -16,7 +16,8 @@ body {
 
 button,
 input,
-select {
+select,
+textarea {
   font: inherit;
 }
 
@@ -328,6 +329,25 @@ td {
   gap: 22px;
 }
 
+.section-nav-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.section-nav-row span {
+  display: inline-flex;
+  min-height: 36px;
+  align-items: center;
+  border: 1px solid #dce8df;
+  border-radius: 999px;
+  background: #f6f8f7;
+  color: #12321f;
+  padding: 0 12px;
+  font-size: 13px;
+  font-weight: 900;
+}
+
 .food-management-section {
   display: grid;
   gap: 14px;
@@ -375,6 +395,10 @@ h4 {
   gap: 12px;
 }
 
+.wide-field {
+  grid-column: 1 / -1;
+}
+
 .form-field,
 .checkbox-field {
   display: grid;
@@ -382,6 +406,11 @@ h4 {
   color: #66776b;
   font-size: 13px;
   font-weight: 800;
+}
+
+textarea {
+  min-height: 84px;
+  resize: vertical;
 }
 
 .checkbox-field {
@@ -412,6 +441,10 @@ h4 {
   font-weight: 900;
 }
 
+.compact-filter {
+  min-width: 260px;
+}
+
 .entity-card {
   display: grid;
   gap: 12px;
@@ -419,6 +452,50 @@ h4 {
   border-radius: 20px;
   padding: 14px;
   background: #fbfdfc;
+}
+
+.partner-preview-card {
+  display: grid;
+  gap: 16px;
+  border: 1px solid #dce8df;
+  border-radius: 24px;
+  background: #fbfdfc;
+  padding: 18px;
+}
+
+.partner-preview-header {
+  display: flex;
+  gap: 14px;
+  align-items: flex-start;
+  justify-content: space-between;
+}
+
+.partner-preview-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.preview-field {
+  display: grid;
+  gap: 6px;
+  border: 1px solid #dce8df;
+  border-radius: 18px;
+  background: white;
+  padding: 12px;
+}
+
+.preview-field span {
+  color: #66776b;
+  font-size: 12px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.preview-field strong {
+  color: #12321f;
+  font-size: 14px;
+  line-height: 20px;
 }
 
 .entity-card-header {

@@ -446,6 +446,7 @@ export type Database = {
       business_partners: {
         Row: {
           address: string | null;
+          business_hours: string | null;
           category_id: string | null;
           created_at: string;
           delivery_fee_label: string | null;
@@ -458,14 +459,20 @@ export type Database = {
           latitude: number | null;
           longitude: number | null;
           name: string;
+          owner_email: string | null;
+          owner_name: string | null;
+          owner_phone: string | null;
+          partner_notes: string | null;
           phone: string | null;
           rating: number | null;
           restaurant_id: string | null;
+          status: string;
           subcategory_id: string | null;
           updated_at: string;
         };
         Insert: {
           address?: string | null;
+          business_hours?: string | null;
           category_id?: string | null;
           created_at?: string;
           delivery_fee_label?: string | null;
@@ -478,14 +485,20 @@ export type Database = {
           latitude?: number | null;
           longitude?: number | null;
           name: string;
+          owner_email?: string | null;
+          owner_name?: string | null;
+          owner_phone?: string | null;
+          partner_notes?: string | null;
           phone?: string | null;
           rating?: number | null;
           restaurant_id?: string | null;
+          status?: string;
           subcategory_id?: string | null;
           updated_at?: string;
         };
         Update: {
           address?: string | null;
+          business_hours?: string | null;
           category_id?: string | null;
           created_at?: string;
           delivery_fee_label?: string | null;
@@ -498,9 +511,14 @@ export type Database = {
           latitude?: number | null;
           longitude?: number | null;
           name?: string;
+          owner_email?: string | null;
+          owner_name?: string | null;
+          owner_phone?: string | null;
+          partner_notes?: string | null;
           phone?: string | null;
           rating?: number | null;
           restaurant_id?: string | null;
+          status?: string;
           subcategory_id?: string | null;
           updated_at?: string;
         };
@@ -521,6 +539,52 @@ export type Database = {
             foreignKeyName: 'business_partners_subcategory_id_fkey';
             columns: ['subcategory_id'];
             referencedRelation: 'service_subcategories';
+            referencedColumns: ['id'];
+          },
+        ];
+      };
+      partner_users: {
+        Row: {
+          created_at: string;
+          email: string | null;
+          full_name: string | null;
+          id: string;
+          is_active: boolean;
+          partner_id: string;
+          phone: string | null;
+          role: string;
+          updated_at: string;
+          user_id: string | null;
+        };
+        Insert: {
+          created_at?: string;
+          email?: string | null;
+          full_name?: string | null;
+          id?: string;
+          is_active?: boolean;
+          partner_id: string;
+          phone?: string | null;
+          role?: string;
+          updated_at?: string;
+          user_id?: string | null;
+        };
+        Update: {
+          created_at?: string;
+          email?: string | null;
+          full_name?: string | null;
+          id?: string;
+          is_active?: boolean;
+          partner_id?: string;
+          phone?: string | null;
+          role?: string;
+          updated_at?: string;
+          user_id?: string | null;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'partner_users_partner_id_fkey';
+            columns: ['partner_id'];
+            referencedRelation: 'business_partners';
             referencedColumns: ['id'];
           },
         ];
