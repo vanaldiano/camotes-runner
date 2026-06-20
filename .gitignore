@@ -58,3 +58,7 @@ backups/
 # Local database backups
 backups/
 
+
+# UI reference videos
+docs/references/*.mp4
+
