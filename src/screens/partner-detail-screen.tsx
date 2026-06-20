@@ -6,6 +6,10 @@ import { AppScreen } from '@/components/app-screen';
 import { FoodImage } from '@/components/food-image';
 import { ScreenHeader } from '@/components/screen-header';
 import { BrandColors } from '@/constants/brand';
+import {
+  getAvailablePartnerProducts,
+  type PartnerProduct,
+} from '@/services/partner-product-service';
 import { getBusinessPartnerById, type BusinessPartnerListItem } from '@/services/partner-service';
 
 type PartnerDetailScreenProps = {
@@ -14,23 +18,40 @@ type PartnerDetailScreenProps = {
 
 export function PartnerDetailScreen({ partnerId }: PartnerDetailScreenProps) {
   const [partner, setPartner] = useState<BusinessPartnerListItem | null>(null);
+  const [products, setProducts] = useState<PartnerProduct[]>([]);
+  const [isProductLoading, setIsProductLoading] = useState(false);
   const [message, setMessage] = useState('Loading partner shop...');
 
   useEffect(() => {
     let isMounted = true;
 
     async function loadPartner() {
+      setIsProductLoading(true);
       const nextPartner = await getBusinessPartnerById(partnerId);
+      const nextProducts = nextPartner?.restaurant_id
+        ? []
+        : await getAvailablePartnerProducts(partnerId);
 
       if (!isMounted) {
         return;
       }
 
       setPartner(nextPartner);
+      setProducts(nextProducts);
       setMessage(nextPartner ? '' : 'No partner shops available yet.');
+      setIsProductLoading(false);
     }
 
-    loadPartner();
+    loadPartner().catch(() => {
+      if (!isMounted) {
+        return;
+      }
+
+      setPartner(null);
+      setProducts([]);
+      setMessage('No partner shops available yet.');
+      setIsProductLoading(false);
+    });
 
     return () => {
       isMounted = false;
@@ -59,27 +80,73 @@ export function PartnerDetailScreen({ partnerId }: PartnerDetailScreenProps) {
             <DetailRow label="Delivery fee" value={partner.delivery_fee_label ?? 'Delivery fee varies'} />
           </View>
 
-          <View style={styles.comingSoonCard}>
-            <AppIcon
-              backgroundColor={BrandColors.paleYellow}
-              color={BrandColors.darkGreen}
-              name={{ ios: 'bag', android: 'shopping_bag', web: 'shopping_bag' }}
-              size={28}
-              style={styles.comingSoonIcon}
-            />
-            <View style={styles.comingSoonCopy}>
-              <Text style={styles.comingSoonTitle}>Products/menu coming soon</Text>
-              <Text style={styles.comingSoonText}>
-                This partner is listed for browsing while its full catalog is being prepared.
-              </Text>
+          {!partner.restaurant_id && products.length > 0 ? (
+            <View style={styles.productSection}>
+              <View style={styles.sectionHeader}>
+                <Text style={styles.sectionTitle}>Products / Menu</Text>
+                <Text style={styles.sectionCount}>{products.length} available</Text>
+              </View>
+              <View style={styles.productList}>
+                {products.map((product) => (
+                  <View key={product.id} style={styles.productCard}>
+                    <FoodImage imageUrl={product.image_url} label={product.name} variant="menuItem" />
+                    <View style={styles.productCopy}>
+                      <View style={styles.productTitleRow}>
+                        <Text style={styles.productName}>{product.name}</Text>
+                        <Text style={styles.productPrice}>{formatCurrency(product.price)}</Text>
+                      </View>
+                      <Text style={styles.productDescription}>
+                        {product.description ?? 'Local partner product.'}
+                      </Text>
+                      <View style={styles.productFooter}>
+                        <Text style={styles.productUnit}>{product.unit_label ?? 'Item'}</Text>
+                        <Text style={styles.productAction}>View</Text>
+                      </View>
+                    </View>
+                  </View>
+                ))}
+              </View>
+              <View style={styles.noticeCard}>
+                <Text style={styles.noticeText}>
+                  Ordering for this partner category is coming soon.
+                </Text>
+              </View>
             </View>
-          </View>
+          ) : (
+            <View style={styles.comingSoonCard}>
+              <AppIcon
+                backgroundColor={BrandColors.paleYellow}
+                color={BrandColors.darkGreen}
+                name={{ ios: 'bag', android: 'shopping_bag', web: 'shopping_bag' }}
+                size={28}
+                style={styles.comingSoonIcon}
+              />
+              <View style={styles.comingSoonCopy}>
+                <Text style={styles.comingSoonTitle}>Products/menu coming soon</Text>
+                <Text style={styles.comingSoonText}>
+                  {isProductLoading
+                    ? 'Loading available products...'
+                    : partner.restaurant_id
+                      ? 'Food ordering for this shop continues through the restaurant menu.'
+                      : 'This partner is listed for browsing while its full catalog is being prepared.'}
+                </Text>
+              </View>
+            </View>
+          )}
         </>
       ) : (
         <Text style={styles.message}>{message}</Text>
       )}
     </AppScreen>
   );
+}
+
+function formatCurrency(value: number) {
+  return new Intl.NumberFormat('en-PH', {
+    currency: 'PHP',
+    maximumFractionDigits: 0,
+    style: 'currency',
+  }).format(value);
 }
 
 function DetailRow({ label, value }: { label: string; value: string }) {
@@ -189,5 +256,87 @@ const styles = StyleSheet.create({
     fontSize: 22,
     fontWeight: '900',
     lineHeight: 28,
+  },
+  noticeCard: {
+    backgroundColor: BrandColors.paleYellow,
+    borderRadius: 18,
+    padding: 14,
+  },
+  noticeText: {
+    color: BrandColors.darkGreen,
+    fontSize: 13,
+    fontWeight: '900',
+    lineHeight: 19,
+  },
+  productAction: {
+    color: BrandColors.green,
+    fontSize: 13,
+    fontWeight: '900',
+  },
+  productCard: {
+    backgroundColor: BrandColors.white,
+    borderColor: BrandColors.border,
+    borderRadius: 22,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: 12,
+    padding: 12,
+  },
+  productCopy: {
+    flex: 1,
+    gap: 6,
+  },
+  productDescription: {
+    color: BrandColors.mutedInk,
+    fontSize: 13,
+    fontWeight: '700',
+    lineHeight: 19,
+  },
+  productFooter: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  productList: {
+    gap: 10,
+  },
+  productName: {
+    color: BrandColors.ink,
+    flex: 1,
+    fontSize: 15,
+    fontWeight: '900',
+  },
+  productPrice: {
+    color: BrandColors.darkGreen,
+    fontSize: 14,
+    fontWeight: '900',
+  },
+  productSection: {
+    gap: 12,
+  },
+  productTitleRow: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  productUnit: {
+    color: BrandColors.mutedInk,
+    fontSize: 12,
+    fontWeight: '800',
+    textTransform: 'uppercase',
+  },
+  sectionCount: {
+    color: BrandColors.green,
+    fontSize: 13,
+    fontWeight: '900',
+  },
+  sectionHeader: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  sectionTitle: {
+    color: BrandColors.ink,
+    fontSize: 18,
+    fontWeight: '900',
   },
 });

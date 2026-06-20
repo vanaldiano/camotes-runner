@@ -34,6 +34,7 @@ export type AdminServiceSubcategory = Tables<'service_subcategories'>;
 export type AdminBusinessPartner = Tables<'business_partners'>;
 export type AdminPartnerUser = Tables<'partner_users'>;
 export type AdminPartnerOrderNotification = Tables<'partner_order_notifications'>;
+export type AdminPartnerProduct = Tables<'partner_products'>;
 export type AdminFoodOrder = Tables<'food_orders'> & {
   latest_rider_location_updated_at?: string | null;
 };
@@ -93,6 +94,21 @@ export type PartnerUserInput = Pick<
   | 'phone'
   | 'role'
   | 'user_id'
+>;
+export type PartnerProductInput = Pick<
+  TablesInsert<'partner_products'>,
+  | 'category_id'
+  | 'description'
+  | 'image_url'
+  | 'is_active'
+  | 'is_available'
+  | 'name'
+  | 'partner_id'
+  | 'price'
+  | 'sku'
+  | 'sort_order'
+  | 'subcategory_id'
+  | 'unit_label'
 >;
 
 const restaurantImageBucket = 'restaurant-images';
@@ -488,6 +504,72 @@ export async function getUnreadPartnerNotificationCount(partnerId?: string) {
   }
 
   return count ?? 0;
+}
+
+export async function getPartnerProducts(partnerId: string) {
+  const { data, error } = await supabase
+    .from('partner_products')
+    .select('*')
+    .eq('partner_id', partnerId)
+    .order('sort_order', { ascending: true })
+    .order('name', { ascending: true });
+
+  if (error) {
+    throw error;
+  }
+
+  return data ?? [];
+}
+
+export async function createPartnerProduct(input: PartnerProductInput) {
+  const { data, error } = await supabase
+    .from('partner_products')
+    .insert(input)
+    .select('*')
+    .maybeSingle();
+
+  if (error) {
+    throw error;
+  }
+
+  if (!data) {
+    throw new Error('Supabase did not return the created partner product.');
+  }
+
+  return data;
+}
+
+export async function updatePartnerProduct(
+  productId: string,
+  input: TablesUpdate<'partner_products'>
+) {
+  const { data, error } = await supabase
+    .from('partner_products')
+    .update({ ...input, updated_at: new Date().toISOString() })
+    .eq('id', productId)
+    .select('*')
+    .maybeSingle();
+
+  if (error) {
+    throw error;
+  }
+
+  if (!data) {
+    throw new Error(`Partner product ${productId} was not found.`);
+  }
+
+  return data;
+}
+
+export async function deactivatePartnerProduct(productId: string) {
+  return updatePartnerProduct(productId, { is_active: false });
+}
+
+export async function togglePartnerProductAvailability(
+  productId: string,
+  isAvailable: boolean
+) {
+  return updatePartnerProduct(productId, { is_available: isAvailable });
 }
 
 export async function createRestaurant(input: RestaurantInput) {

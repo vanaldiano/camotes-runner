@@ -526,6 +526,28 @@ textarea {
   padding: 12px;
 }
 
+.preview-products-section {
+  display: grid;
+  gap: 12px;
+}
+
+.preview-product-card {
+  display: flex;
+  gap: 14px;
+  align-items: flex-start;
+  justify-content: space-between;
+  border: 1px solid #dce8df;
+  border-radius: 18px;
+  background: white;
+  padding: 12px;
+}
+
+.status-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
 .preview-field {
   display: grid;
   gap: 6px;
@@ -585,6 +607,10 @@ textarea {
   flex-wrap: wrap;
   gap: 8px;
   justify-content: flex-end;
+}
+
+.form-action-row {
+  justify-content: flex-start;
 }
 
 .primary-action-button,
@@ -738,7 +764,8 @@ textarea {
   .section-title-row,
   .entity-card-header,
   .partner-notification-summary,
-  .preview-notification-card {
+  .preview-notification-card,
+  .preview-product-card {
     flex-direction: column;
   }
 

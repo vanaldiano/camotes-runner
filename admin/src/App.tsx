@@ -15,7 +15,9 @@ import {
   bookingStatuses,
   createBusinessPartner,
   createMenuItem,
+  createPartnerProduct,
   createRestaurant,
+  deactivatePartnerProduct,
   deleteMenuItem,
   deleteRestaurant,
   foodOrderStatuses,
@@ -28,6 +30,7 @@ import {
   getMenuItems,
   getPartnerNotificationsByPartner,
   getPartnerOrderNotifications,
+  getPartnerProducts,
   getPartnerUsers,
   getRestaurants,
   getRiders,
@@ -36,10 +39,12 @@ import {
   getUnreadPartnerNotificationCount,
   assignPartnerUserFoundation,
   markPartnerNotificationRead,
+  togglePartnerProductAvailability,
   updateBusinessPartner,
   updateBookingStatus,
   updateFoodOrderStatus,
   updateMenuItem,
+  updatePartnerProduct,
   updateMenuItemAvailability,
   updateMenuItemImageUrl,
   updateRestaurant,
@@ -54,6 +59,7 @@ import {
   type AdminMenuCategory,
   type AdminMenuItem,
   type AdminPartnerOrderNotification,
+  type AdminPartnerProduct,
   type AdminPartnerUser,
   type AdminRestaurant,
   type AdminRider,
@@ -62,6 +68,7 @@ import {
   type BusinessPartnerInput,
   type MenuItemInput,
   type PartnerUserInput,
+  type PartnerProductInput,
   type RestaurantInput,
 } from './services/bookings';
 
@@ -142,6 +149,20 @@ type PartnerUserFormState = {
   role: string;
   userId: string;
 };
+type PartnerProductFormState = {
+  categoryId: string;
+  description: string;
+  imageUrl: string;
+  isActive: boolean;
+  isAvailable: boolean;
+  name: string;
+  partnerId: string;
+  price: string;
+  sku: string;
+  sortOrder: string;
+  subcategoryId: string;
+  unitLabel: string;
+};
 
 const emptyRestaurantForm: RestaurantFormState = {
   address: '',
@@ -199,6 +220,21 @@ const emptyPartnerUserForm: PartnerUserFormState = {
   userId: '',
 };
 
+const emptyPartnerProductForm: PartnerProductFormState = {
+  categoryId: '',
+  description: '',
+  imageUrl: '',
+  isActive: true,
+  isAvailable: true,
+  name: '',
+  partnerId: '',
+  price: '',
+  sku: '',
+  sortOrder: '0',
+  subcategoryId: '',
+  unitLabel: '',
+};
+
 export function App() {
   const [adminAuthState, setAdminAuthState] = useState<AdminAuthState>({
     isAdmin: false,
@@ -219,19 +255,25 @@ export function App() {
   const [partnerOrderNotifications, setPartnerOrderNotifications] = useState<
     AdminPartnerOrderNotification[]
   >([]);
+  const [partnerProducts, setPartnerProducts] = useState<AdminPartnerProduct[]>([]);
   const [previewPartnerNotifications, setPreviewPartnerNotifications] = useState<
     AdminPartnerOrderNotification[]
   >([]);
+  const [previewPartnerProducts, setPreviewPartnerProducts] = useState<AdminPartnerProduct[]>([]);
   const [unreadPartnerNotificationCount, setUnreadPartnerNotificationCount] = useState(0);
   const [riders, setRiders] = useState<AdminRider[]>([]);
   const [restaurantForm, setRestaurantForm] = useState<RestaurantFormState>(emptyRestaurantForm);
   const [menuItemForm, setMenuItemForm] = useState<MenuItemFormState>(emptyMenuItemForm);
   const [partnerForm, setPartnerForm] = useState<PartnerFormState>(emptyPartnerForm);
   const [partnerUserForm, setPartnerUserForm] = useState<PartnerUserFormState>(emptyPartnerUserForm);
+  const [partnerProductForm, setPartnerProductForm] =
+    useState<PartnerProductFormState>(emptyPartnerProductForm);
+  const [selectedProductPartnerId, setSelectedProductPartnerId] = useState('');
   const [previewPartnerId, setPreviewPartnerId] = useState('');
   const [editingRestaurantId, setEditingRestaurantId] = useState('');
   const [editingMenuItemId, setEditingMenuItemId] = useState('');
   const [editingPartnerId, setEditingPartnerId] = useState('');
+  const [editingPartnerProductId, setEditingPartnerProductId] = useState('');
   const [restaurantImageInputs, setRestaurantImageInputs] = useState<Record<string, string>>({});
   const [menuItemImageInputs, setMenuItemImageInputs] = useState<Record<string, string>>({});
   const [filter, setFilter] = useState<StatusFilter>('all');
@@ -245,6 +287,7 @@ export function App() {
   const [savingMenuItemId, setSavingMenuItemId] = useState('');
   const [savingPartnerId, setSavingPartnerId] = useState('');
   const [savingPartnerUserId, setSavingPartnerUserId] = useState('');
+  const [savingPartnerProductId, setSavingPartnerProductId] = useState('');
   const [markingPartnerNotificationId, setMarkingPartnerNotificationId] = useState('');
   const [savingRestaurantImageId, setSavingRestaurantImageId] = useState('');
   const [savingMenuItemImageId, setSavingMenuItemImageId] = useState('');
@@ -423,6 +466,7 @@ export function App() {
       setPartnerOrderNotifications(notificationRows);
       setUnreadPartnerNotificationCount(unreadNotificationCount);
       setPreviewPartnerId((currentPreviewPartnerId) => currentPreviewPartnerId || partnerRows[0]?.id || '');
+      setSelectedProductPartnerId((currentPartnerId) => currentPartnerId || partnerRows[0]?.id || '');
     } catch (error) {
       setMarketplaceErrorMessage(`Unable to load marketplace data. ${getErrorMessage(error)}`);
     } finally {
@@ -438,6 +482,24 @@ export function App() {
       setPreviewPartnerNotifications(rows);
     } catch (error) {
       setMarketplaceErrorMessage(`Unable to load partner notifications. ${getErrorMessage(error)}`);
+    }
+  }, []);
+
+  const loadPartnerProducts = useCallback(async (partnerId: string) => {
+    try {
+      const rows = await getPartnerProducts(partnerId);
+      setPartnerProducts(rows);
+    } catch (error) {
+      setMarketplaceErrorMessage(`Unable to load partner products. ${getErrorMessage(error)}`);
+    }
+  }, []);
+
+  const loadPreviewPartnerProducts = useCallback(async (partnerId: string) => {
+    try {
+      const rows = await getPartnerProducts(partnerId);
+      setPreviewPartnerProducts(rows);
+    } catch (error) {
+      setMarketplaceErrorMessage(`Unable to load partner preview products. ${getErrorMessage(error)}`);
     }
   }, []);
 
@@ -517,6 +579,7 @@ export function App() {
       setPartnerOrderNotifications(notificationRows);
       setUnreadPartnerNotificationCount(unreadNotificationCount);
       setPreviewPartnerId((currentPreviewPartnerId) => currentPreviewPartnerId || partnerRows[0]?.id || '');
+      setSelectedProductPartnerId((currentPartnerId) => currentPartnerId || partnerRows[0]?.id || '');
     } catch (error) {
       setMarketplaceErrorMessage(`Unable to load marketplace data. ${getErrorMessage(error)}`);
     } finally {
@@ -864,6 +927,82 @@ export function App() {
     }
   }
 
+  async function handlePartnerProductSave() {
+    setSavingPartnerProductId(editingPartnerProductId || 'new');
+    setMarketplaceMessage('');
+    setMarketplaceErrorMessage('');
+
+    try {
+      const input = getPartnerProductInput(partnerProductForm);
+
+      if (editingPartnerProductId) {
+        await updatePartnerProduct(editingPartnerProductId, input);
+        setMarketplaceMessage('Partner product updated.');
+      } else {
+        await createPartnerProduct(input);
+        setMarketplaceMessage('Partner product added.');
+      }
+
+      setEditingPartnerProductId('');
+      setPartnerProductForm(getEmptyPartnerProductFormForPartner(input.partner_id, businessPartners));
+      await loadPartnerProducts(input.partner_id);
+
+      if (previewPartnerId === input.partner_id) {
+        await loadPreviewPartnerProducts(input.partner_id);
+      }
+    } catch (error) {
+      setMarketplaceErrorMessage(`Unable to save partner product. ${getErrorMessage(error)}`);
+    } finally {
+      setSavingPartnerProductId('');
+    }
+  }
+
+  async function handlePartnerProductAvailability(productId: string, isAvailable: boolean) {
+    setSavingPartnerProductId(productId);
+    setMarketplaceMessage('');
+    setMarketplaceErrorMessage('');
+
+    try {
+      await togglePartnerProductAvailability(productId, isAvailable);
+      setMarketplaceMessage(isAvailable ? 'Partner product marked available.' : 'Partner product marked unavailable.');
+
+      if (selectedProductPartnerId) {
+        await loadPartnerProducts(selectedProductPartnerId);
+      }
+
+      if (previewPartnerId) {
+        await loadPreviewPartnerProducts(previewPartnerId);
+      }
+    } catch (error) {
+      setMarketplaceErrorMessage(`Unable to update partner product availability. ${getErrorMessage(error)}`);
+    } finally {
+      setSavingPartnerProductId('');
+    }
+  }
+
+  async function handlePartnerProductDeactivate(productId: string) {
+    setSavingPartnerProductId(productId);
+    setMarketplaceMessage('');
+    setMarketplaceErrorMessage('');
+
+    try {
+      await deactivatePartnerProduct(productId);
+      setMarketplaceMessage('Partner product deactivated.');
+
+      if (selectedProductPartnerId) {
+        await loadPartnerProducts(selectedProductPartnerId);
+      }
+
+      if (previewPartnerId) {
+        await loadPreviewPartnerProducts(previewPartnerId);
+      }
+    } catch (error) {
+      setMarketplaceErrorMessage(`Unable to deactivate partner product. ${getErrorMessage(error)}`);
+    } finally {
+      setSavingPartnerProductId('');
+    }
+  }
+
   async function handleMarkPartnerNotificationRead(notificationId: string) {
     setMarkingPartnerNotificationId(notificationId);
     setMarketplaceMessage('');
@@ -895,6 +1034,7 @@ export function App() {
     try {
       await getBusinessPartnerById(partnerId);
       await loadPreviewPartnerNotifications(partnerId);
+      await loadPreviewPartnerProducts(partnerId);
     } catch (error) {
       setMarketplaceErrorMessage(`Unable to load partner preview. ${getErrorMessage(error)}`);
     }
@@ -903,11 +1043,46 @@ export function App() {
   useEffect(() => {
     if (!adminAuthState.isAdmin || !previewPartnerId) {
       setPreviewPartnerNotifications([]);
+      setPreviewPartnerProducts([]);
       return;
     }
 
     void loadPreviewPartnerNotifications(previewPartnerId);
-  }, [adminAuthState.isAdmin, loadPreviewPartnerNotifications, previewPartnerId]);
+    void loadPreviewPartnerProducts(previewPartnerId);
+  }, [
+    adminAuthState.isAdmin,
+    loadPreviewPartnerNotifications,
+    loadPreviewPartnerProducts,
+    previewPartnerId,
+  ]);
+
+  useEffect(() => {
+    if (!adminAuthState.isAdmin || !selectedProductPartnerId) {
+      setPartnerProducts([]);
+      return;
+    }
+
+    void loadPartnerProducts(selectedProductPartnerId);
+  }, [adminAuthState.isAdmin, loadPartnerProducts, selectedProductPartnerId]);
+
+  useEffect(() => {
+    if (!selectedProductPartnerId || editingPartnerProductId) {
+      return;
+    }
+
+    if (partnerProductForm.partnerId === selectedProductPartnerId) {
+      return;
+    }
+
+    setPartnerProductForm(
+      getEmptyPartnerProductFormForPartner(selectedProductPartnerId, businessPartners)
+    );
+  }, [
+    businessPartners,
+    editingPartnerProductId,
+    partnerProductForm.partnerId,
+    selectedProductPartnerId,
+  ]);
 
   useEffect(() => {
     if (!adminAuthState.isAdmin) {
@@ -986,6 +1161,9 @@ export function App() {
   const partnerFormSubcategories = serviceSubcategories.filter(
     (subcategory) => subcategory.category_id === partnerForm.categoryId
   );
+  const partnerProductFormSubcategories = serviceSubcategories.filter(
+    (subcategory) => subcategory.category_id === partnerProductForm.categoryId
+  );
   const previewPartner = businessPartners.find((partner) => partner.id === previewPartnerId) ?? null;
   const previewPartnerUsers = partnerUsers.filter((user) => user.partner_id === previewPartnerId);
   const previewUnreadNotificationCount = previewPartnerNotifications.filter(
@@ -995,6 +1173,7 @@ export function App() {
   const isMenuItemSaving = savingMenuItemId === (editingMenuItemId || 'new');
   const isPartnerSaving = savingPartnerId === (editingPartnerId || 'new');
   const isPartnerUserSaving = savingPartnerUserId === (partnerUserForm.partnerId || 'new');
+  const isPartnerProductSaving = savingPartnerProductId === (editingPartnerProductId || 'new');
 
   if (isAdminAuthLoading) {
     return (
@@ -1624,6 +1803,296 @@ export function App() {
 
             <div className="food-management-section">
               <div className="section-title-row">
+                <h3>Product/Menu Management</h3>
+                <label className="filter-control compact-filter">
+                  <span>Manage partner</span>
+                  <select
+                    value={selectedProductPartnerId}
+                    onChange={(event) => {
+                      const nextPartnerId = event.target.value;
+                      setSelectedProductPartnerId(nextPartnerId);
+                      setEditingPartnerProductId('');
+                      setPartnerProductForm(
+                        getEmptyPartnerProductFormForPartner(nextPartnerId, businessPartners)
+                      );
+                    }}>
+                    <option value="">Choose partner</option>
+                    {businessPartners.map((partner) => (
+                      <option key={partner.id} value={partner.id}>
+                        {partner.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+
+              <form
+                className="management-form"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  void handlePartnerProductSave();
+                }}>
+                <div className="form-grid">
+                  <label className="form-field">
+                    <span>Partner shop</span>
+                    <select
+                      required
+                      value={partnerProductForm.partnerId}
+                      onChange={(event) => {
+                        const nextPartnerId = event.target.value;
+                        setSelectedProductPartnerId(nextPartnerId);
+                        setEditingPartnerProductId('');
+                        setPartnerProductForm(
+                          getEmptyPartnerProductFormForPartner(nextPartnerId, businessPartners)
+                        );
+                      }}>
+                      <option value="">Choose partner</option>
+                      {businessPartners.map((partner) => (
+                        <option key={partner.id} value={partner.id}>
+                          {partner.name}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="form-field">
+                    <span>Name</span>
+                    <input
+                      required
+                      type="text"
+                      value={partnerProductForm.name}
+                      onChange={(event) =>
+                        setPartnerProductForm((current) => ({ ...current, name: event.target.value }))
+                      }
+                    />
+                  </label>
+                  <label className="form-field">
+                    <span>Price</span>
+                    <input
+                      min="0"
+                      step="0.01"
+                      type="number"
+                      value={partnerProductForm.price}
+                      onChange={(event) =>
+                        setPartnerProductForm((current) => ({ ...current, price: event.target.value }))
+                      }
+                    />
+                  </label>
+                  <label className="form-field">
+                    <span>Category</span>
+                    <select
+                      value={partnerProductForm.categoryId}
+                      onChange={(event) =>
+                        setPartnerProductForm((current) => ({
+                          ...current,
+                          categoryId: event.target.value,
+                          subcategoryId: '',
+                        }))
+                      }>
+                      <option value="">Use partner category</option>
+                      {serviceCategories.map((category) => (
+                        <option key={category.id} value={category.id}>
+                          {category.name}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="form-field">
+                    <span>Sub-category</span>
+                    <select
+                      value={partnerProductForm.subcategoryId}
+                      onChange={(event) =>
+                        setPartnerProductForm((current) => ({
+                          ...current,
+                          subcategoryId: event.target.value,
+                        }))
+                      }>
+                      <option value="">Use partner sub-category</option>
+                      {partnerProductFormSubcategories.map((subcategory) => (
+                        <option key={subcategory.id} value={subcategory.id}>
+                          {subcategory.name}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="form-field">
+                    <span>SKU</span>
+                    <input
+                      type="text"
+                      value={partnerProductForm.sku}
+                      onChange={(event) =>
+                        setPartnerProductForm((current) => ({ ...current, sku: event.target.value }))
+                      }
+                    />
+                  </label>
+                  <label className="form-field">
+                    <span>Unit label</span>
+                    <input
+                      placeholder="piece, bottle, pack"
+                      type="text"
+                      value={partnerProductForm.unitLabel}
+                      onChange={(event) =>
+                        setPartnerProductForm((current) => ({
+                          ...current,
+                          unitLabel: event.target.value,
+                        }))
+                      }
+                    />
+                  </label>
+                  <label className="form-field">
+                    <span>Sort order</span>
+                    <input
+                      type="number"
+                      value={partnerProductForm.sortOrder}
+                      onChange={(event) =>
+                        setPartnerProductForm((current) => ({
+                          ...current,
+                          sortOrder: event.target.value,
+                        }))
+                      }
+                    />
+                  </label>
+                  <label className="form-field">
+                    <span>Image URL</span>
+                    <input
+                      placeholder="https://example.com/product.jpg"
+                      type="url"
+                      value={partnerProductForm.imageUrl}
+                      onChange={(event) =>
+                        setPartnerProductForm((current) => ({
+                          ...current,
+                          imageUrl: event.target.value,
+                        }))
+                      }
+                    />
+                  </label>
+                  <label className="form-field wide-field">
+                    <span>Description</span>
+                    <textarea
+                      value={partnerProductForm.description}
+                      onChange={(event) =>
+                        setPartnerProductForm((current) => ({
+                          ...current,
+                          description: event.target.value,
+                        }))
+                      }
+                    />
+                  </label>
+                </div>
+                <label className="checkbox-field">
+                  <input
+                    checked={partnerProductForm.isAvailable}
+                    type="checkbox"
+                    onChange={(event) =>
+                      setPartnerProductForm((current) => ({
+                        ...current,
+                        isAvailable: event.target.checked,
+                      }))
+                    }
+                  />
+                  <span>Product is available</span>
+                </label>
+                <label className="checkbox-field">
+                  <input
+                    checked={partnerProductForm.isActive}
+                    type="checkbox"
+                    onChange={(event) =>
+                      setPartnerProductForm((current) => ({
+                        ...current,
+                        isActive: event.target.checked,
+                      }))
+                    }
+                  />
+                  <span>Product is active</span>
+                </label>
+                <div className="action-row form-action-row">
+                  {editingPartnerProductId ? (
+                    <button
+                      className="secondary-button"
+                      type="button"
+                      onClick={() => {
+                        setEditingPartnerProductId('');
+                        setPartnerProductForm(
+                          getEmptyPartnerProductFormForPartner(selectedProductPartnerId, businessPartners)
+                        );
+                      }}>
+                      Cancel edit
+                    </button>
+                  ) : null}
+                  <button className="primary-action-button" disabled={isPartnerProductSaving} type="submit">
+                    {isPartnerProductSaving
+                      ? 'Saving...'
+                      : editingPartnerProductId
+                        ? 'Update product'
+                        : 'Add product'}
+                  </button>
+                </div>
+              </form>
+
+              {!selectedProductPartnerId ? (
+                <p className="empty-state">Choose a partner shop to manage products.</p>
+              ) : partnerProducts.length === 0 ? (
+                <p className="empty-state">No products found for this partner yet.</p>
+              ) : (
+                <div className="entity-list compact-entity-grid">
+                  {partnerProducts.map((product) => (
+                    <article className="entity-card" key={product.id}>
+                      <div className="entity-card-header">
+                        <div>
+                          <h4>{product.name}</h4>
+                          <p className="entity-meta">
+                            {formatCurrency(Number(product.price))} - {product.unit_label || 'Item'} - Sort{' '}
+                            {product.sort_order}
+                          </p>
+                          <p className="entity-meta">
+                            {product.description || 'No description'}{' '}
+                            {product.sku ? `- SKU ${product.sku}` : ''}
+                          </p>
+                          <div className="status-row">
+                            <span className={product.is_active ? 'status-pill active' : 'status-pill'}>
+                              {product.is_active ? 'Active' : 'Inactive'}
+                            </span>
+                            <span className={product.is_available ? 'status-pill active' : 'status-pill'}>
+                              {product.is_available ? 'Available' : 'Unavailable'}
+                            </span>
+                          </div>
+                        </div>
+                        <div className="action-row">
+                          <button
+                            className="secondary-button"
+                            type="button"
+                            onClick={() => {
+                              setEditingPartnerProductId(product.id);
+                              setSelectedProductPartnerId(product.partner_id);
+                              setPartnerProductForm(getPartnerProductForm(product));
+                            }}>
+                            Edit
+                          </button>
+                          <button
+                            className="secondary-button"
+                            disabled={savingPartnerProductId === product.id}
+                            type="button"
+                            onClick={() =>
+                              void handlePartnerProductAvailability(product.id, !product.is_available)
+                            }>
+                            {product.is_available ? 'Mark unavailable' : 'Mark available'}
+                          </button>
+                          <button
+                            className="secondary-button"
+                            disabled={!product.is_active || savingPartnerProductId === product.id}
+                            type="button"
+                            onClick={() => void handlePartnerProductDeactivate(product.id)}>
+                            Deactivate
+                          </button>
+                        </div>
+                      </div>
+                    </article>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="food-management-section">
+              <div className="section-title-row">
                 <h3>Partner Orders / Notifications</h3>
                 <span className="count-pill">{unreadPartnerNotificationCount} unread</span>
               </div>
@@ -1725,6 +2194,53 @@ export function App() {
                     <PreviewField label="Owner email" value={previewPartner.owner_email} />
                     <PreviewField label="Active status" value={previewPartner.is_active ? 'Active' : 'Inactive'} />
                     <PreviewField label="Marketplace status" value={previewPartner.status} />
+                  </div>
+                  <div className="preview-products-section">
+                    <div className="section-title-row">
+                      <div>
+                        <h3>Products / Menu</h3>
+                        <p className="entity-meta">
+                          These products appear in the customer app when active and available.
+                        </p>
+                      </div>
+                      <span className="count-pill">{previewPartnerProducts.length} products</span>
+                    </div>
+                    {previewPartnerProducts.length === 0 ? (
+                      <p className="empty-state">No products added for this partner yet.</p>
+                    ) : (
+                      <div className="entity-list compact-entity-grid">
+                        {previewPartnerProducts.map((product) => (
+                          <article className="preview-product-card" key={product.id}>
+                            <div>
+                              <h4>{product.name}</h4>
+                              <p className="entity-meta">
+                                {formatCurrency(Number(product.price))} - {product.unit_label || 'Item'}
+                              </p>
+                              <p className="entity-meta">{product.description || 'No description'}</p>
+                              <div className="status-row">
+                                <span className={product.is_active ? 'status-pill active' : 'status-pill'}>
+                                  {product.is_active ? 'Active' : 'Inactive'}
+                                </span>
+                                <span
+                                  className={product.is_available ? 'status-pill active' : 'status-pill'}>
+                                  {product.is_available ? 'Available' : 'Unavailable'}
+                                </span>
+                              </div>
+                            </div>
+                            <button
+                              className="secondary-button"
+                              type="button"
+                              onClick={() => {
+                                setSelectedProductPartnerId(product.partner_id);
+                                setEditingPartnerProductId(product.id);
+                                setPartnerProductForm(getPartnerProductForm(product));
+                              }}>
+                              Edit
+                            </button>
+                          </article>
+                        ))}
+                      </div>
+                    )}
                   </div>
                   <div className="preview-notification-list">
                     {previewPartnerNotifications.length === 0 ? (
@@ -2792,6 +3308,37 @@ function getPartnerForm(partner: AdminBusinessPartner): PartnerFormState {
   };
 }
 
+function getEmptyPartnerProductFormForPartner(
+  partnerId: string,
+  partners: AdminBusinessPartner[]
+): PartnerProductFormState {
+  const partner = partners.find((item) => item.id === partnerId);
+
+  return {
+    ...emptyPartnerProductForm,
+    categoryId: partner?.category_id ?? '',
+    partnerId,
+    subcategoryId: partner?.subcategory_id ?? '',
+  };
+}
+
+function getPartnerProductForm(product: AdminPartnerProduct): PartnerProductFormState {
+  return {
+    categoryId: product.category_id ?? '',
+    description: product.description ?? '',
+    imageUrl: product.image_url ?? '',
+    isActive: product.is_active,
+    isAvailable: product.is_available,
+    name: product.name,
+    partnerId: product.partner_id,
+    price: String(product.price),
+    sku: product.sku ?? '',
+    sortOrder: String(product.sort_order),
+    subcategoryId: product.subcategory_id ?? '',
+    unitLabel: product.unit_label ?? '',
+  };
+}
+
 function getRestaurantInput(form: RestaurantFormState): RestaurantInput {
   return {
     address: requireText(form.address, 'Restaurant address'),
@@ -2844,6 +3391,23 @@ function getPartnerInput(form: PartnerFormState): BusinessPartnerInput {
     restaurant_id: normalizeOptionalText(form.restaurantId),
     status: requireText(form.status, 'Partner status'),
     subcategory_id: normalizeOptionalText(form.subcategoryId),
+  };
+}
+
+function getPartnerProductInput(form: PartnerProductFormState): PartnerProductInput {
+  return {
+    category_id: normalizeOptionalText(form.categoryId),
+    description: normalizeOptionalText(form.description),
+    image_url: normalizeOptionalUrl(form.imageUrl),
+    is_active: form.isActive,
+    is_available: form.isAvailable,
+    name: requireText(form.name, 'Product name'),
+    partner_id: requireText(form.partnerId, 'Partner shop'),
+    price: requireNonNegativeNumber(form.price || '0', 'Product price'),
+    sku: normalizeOptionalText(form.sku),
+    sort_order: requireInteger(form.sortOrder || '0', 'Sort order'),
+    subcategory_id: normalizeOptionalText(form.subcategoryId),
+    unit_label: normalizeOptionalText(form.unitLabel),
   };
 }
 
@@ -2913,6 +3477,16 @@ function requireNonNegativeNumber(value: string, fieldName: string) {
 
   if (!Number.isFinite(numericValue) || numericValue < 0) {
     throw new Error(`${fieldName} must be 0 or higher.`);
+  }
+
+  return numericValue;
+}
+
+function requireInteger(value: string, fieldName: string) {
+  const numericValue = Number(value);
+
+  if (!Number.isInteger(numericValue)) {
+    throw new Error(`${fieldName} must be a whole number.`);
   }
 
   return numericValue;

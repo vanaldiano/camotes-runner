@@ -589,6 +589,122 @@ export type Database = {
           },
         ];
       };
+      partner_products: {
+        Row: {
+          category_id: string | null;
+          created_at: string;
+          description: string | null;
+          id: string;
+          image_url: string | null;
+          is_active: boolean;
+          is_available: boolean;
+          name: string;
+          partner_id: string;
+          price: number;
+          sku: string | null;
+          sort_order: number;
+          subcategory_id: string | null;
+          unit_label: string | null;
+          updated_at: string;
+        };
+        Insert: {
+          category_id?: string | null;
+          created_at?: string;
+          description?: string | null;
+          id?: string;
+          image_url?: string | null;
+          is_active?: boolean;
+          is_available?: boolean;
+          name: string;
+          partner_id: string;
+          price?: number;
+          sku?: string | null;
+          sort_order?: number;
+          subcategory_id?: string | null;
+          unit_label?: string | null;
+          updated_at?: string;
+        };
+        Update: {
+          category_id?: string | null;
+          created_at?: string;
+          description?: string | null;
+          id?: string;
+          image_url?: string | null;
+          is_active?: boolean;
+          is_available?: boolean;
+          name?: string;
+          partner_id?: string;
+          price?: number;
+          sku?: string | null;
+          sort_order?: number;
+          subcategory_id?: string | null;
+          unit_label?: string | null;
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'partner_products_category_id_fkey';
+            columns: ['category_id'];
+            referencedRelation: 'service_categories';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'partner_products_partner_id_fkey';
+            columns: ['partner_id'];
+            referencedRelation: 'business_partners';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'partner_products_subcategory_id_fkey';
+            columns: ['subcategory_id'];
+            referencedRelation: 'service_subcategories';
+            referencedColumns: ['id'];
+          },
+        ];
+      };
+      partner_product_audit: {
+        Row: {
+          action: string;
+          created_at: string;
+          id: string;
+          new_data: Json | null;
+          old_data: Json | null;
+          partner_id: string | null;
+          product_id: string | null;
+        };
+        Insert: {
+          action: string;
+          created_at?: string;
+          id?: string;
+          new_data?: Json | null;
+          old_data?: Json | null;
+          partner_id?: string | null;
+          product_id?: string | null;
+        };
+        Update: {
+          action?: string;
+          created_at?: string;
+          id?: string;
+          new_data?: Json | null;
+          old_data?: Json | null;
+          partner_id?: string | null;
+          product_id?: string | null;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'partner_product_audit_partner_id_fkey';
+            columns: ['partner_id'];
+            referencedRelation: 'business_partners';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'partner_product_audit_product_id_fkey';
+            columns: ['product_id'];
+            referencedRelation: 'partner_products';
+            referencedColumns: ['id'];
+          },
+        ];
+      };
       restaurants: {
         Row: {
           address: string;
