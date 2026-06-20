@@ -1,0 +1,43 @@
+Starting project at C:\Users\user\CamotesRunner
+Using src/app as the root directory for Expo Router.
+React Compiler enabled
+Starting Metro Bundler
+
+Waiting on http://localhost:8082
+Logs for your project will appear below.
+λ Bundled 10470ms node_modules\expo\node_modules\@expo\cli\node_modules\@expo\router-server\node\render.js (1295 modules)
+Web Bundled 11055ms node_modules\expo-router\entry.js (1263 modules)
+λ Bundled 1805ms node_modules\expo\node_modules\@expo\cli\node_modules\@expo\router-server\node\render.js (1 module)
+Web Bundled 4270ms node_modules\expo-router\entry.js (1 module)
+λ Bundled 25ms node_modules\expo\node_modules\@expo\cli\node_modules\@expo\router-server\node\render.js (1 module)
+Web Bundled 2000ms node_modules\expo-router\entry.js (1 module)
+λ Bundled 23ms node_modules\expo\node_modules\@expo\cli\node_modules\@expo\router-server\node\render.js (1 module)
+Web Bundled 2770ms node_modules\expo-router\entry.js (1 module)
+λ Bundled 59ms node_modules\expo\node_modules\@expo\cli\node_modules\@expo\router-server\node\render.js (1 module)
+Web Bundled 4381ms node_modules\expo-router\entry.js (1 module)
+λ Bundled 3826ms node_modules\expo\node_modules\@expo\cli\node_modules\@expo\router-server\node\render.js (1 module)
+Web Bundled 6382ms node_modules\expo-router\entry.js (1 module)
+λ Bundled 434ms node_modules\expo\node_modules\@expo\cli\node_modules\@expo\router-server\node\render.js (1 module)
+Web Bundled 2498ms node_modules\expo-router\entry.js (1 module)
+λ Bundled 22ms node_modules\expo\node_modules\@expo\cli\node_modules\@expo\router-server\node\render.js (1 module)
+Web Bundled 2049ms node_modules\expo-router\entry.js (1 module)
+λ Bundled 20ms node_modules\expo\node_modules\@expo\cli\node_modules\@expo\router-server\node\render.js (1 module)
+Web Bundled 2047ms node_modules\expo-router\entry.js (1 module)
+λ Bundled 20ms node_modules\expo\node_modules\@expo\cli\node_modules\@expo\router-server\node\render.js (1 module)
+Web Bundled 2004ms node_modules\expo-router\entry.js (1 module)
+λ Bundled 18ms node_modules\expo\node_modules\@expo\cli\node_modules\@expo\router-server\node\render.js (1 module)
+Web Bundled 2008ms node_modules\expo-router\entry.js (1 module)
+λ Bundled 2495ms node_modules\expo\node_modules\@expo\cli\node_modules\@expo\router-server\node\render.js (1 module)
+Web Bundled 6931ms node_modules\expo-router\entry.js (1 module)
+λ Bundled 587ms node_modules\expo\node_modules\@expo\cli\node_modules\@expo\router-server\node\render.js (1 module)
+Web Bundled 4134ms node_modules\expo-router\entry.js (1 module)
+λ Bundled 47ms node_modules\expo\node_modules\@expo\cli\node_modules\@expo\router-server\node\render.js (1 module)
+Web Bundled 4132ms node_modules\expo-router\entry.js (1 module)
+λ Bundled 42ms node_modules\expo\node_modules\@expo\cli\node_modules\@expo\router-server\node\render.js (1 module)
+Web Bundled 4106ms node_modules\expo-router\entry.js (1 module)
+λ Bundled 44ms node_modules\expo\node_modules\@expo\cli\node_modules\@expo\router-server\node\render.js (1 module)
+Web Bundled 4074ms node_modules\expo-router\entry.js (1 module)
+λ Bundled 39ms node_modules\expo\node_modules\@expo\cli\node_modules\@expo\router-server\node\render.js (1 module)
+Web Bundled 4073ms node_modules\expo-router\entry.js (1 module)
+λ Bundled 40ms node_modules\expo\node_modules\@expo\cli\node_modules\@expo\router-server\node\render.js (1 module)
+Web Bundled 4172ms node_modules\expo-router\entry.js (1 module)
