@@ -42,3 +42,11 @@ example
 # generated native folders
 /ios
 /android
+
+# Local environment files
+.env
+.env.*
+# Local Expo logs
+expo-start.err.log
+expo-start.out.log
+
