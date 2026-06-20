@@ -755,6 +755,9 @@ export type Database = {
           order_subtotal: number | null;
           order_total: number | null;
           payment_method: PaymentMethod;
+          partner_id: string | null;
+          partner_notification_status: string;
+          partner_notified_at: string | null;
           restaurant_id: string;
           service_fee: number | null;
           status: FoodOrderStatus;
@@ -778,6 +781,9 @@ export type Database = {
           order_subtotal?: number | null;
           order_total?: number | null;
           payment_method?: PaymentMethod;
+          partner_id?: string | null;
+          partner_notification_status?: string;
+          partner_notified_at?: string | null;
           restaurant_id: string;
           service_fee?: number | null;
           status?: FoodOrderStatus;
@@ -801,6 +807,9 @@ export type Database = {
           order_subtotal?: number | null;
           order_total?: number | null;
           payment_method?: PaymentMethod;
+          partner_id?: string | null;
+          partner_notification_status?: string;
+          partner_notified_at?: string | null;
           restaurant_id?: string;
           service_fee?: number | null;
           status?: FoodOrderStatus;
@@ -825,6 +834,55 @@ export type Database = {
             foreignKeyName: 'food_orders_restaurant_id_fkey';
             columns: ['restaurant_id'];
             referencedRelation: 'restaurants';
+            referencedColumns: ['id'];
+          },
+        ];
+      };
+      partner_order_notifications: {
+        Row: {
+          created_at: string;
+          food_order_id: string | null;
+          id: string;
+          message: string;
+          notification_type: string;
+          partner_id: string;
+          read_at: string | null;
+          status: string;
+          title: string;
+        };
+        Insert: {
+          created_at?: string;
+          food_order_id?: string | null;
+          id?: string;
+          message: string;
+          notification_type?: string;
+          partner_id: string;
+          read_at?: string | null;
+          status?: string;
+          title: string;
+        };
+        Update: {
+          created_at?: string;
+          food_order_id?: string | null;
+          id?: string;
+          message?: string;
+          notification_type?: string;
+          partner_id?: string;
+          read_at?: string | null;
+          status?: string;
+          title?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'partner_order_notifications_food_order_id_fkey';
+            columns: ['food_order_id'];
+            referencedRelation: 'food_orders';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'partner_order_notifications_partner_id_fkey';
+            columns: ['partner_id'];
+            referencedRelation: 'business_partners';
             referencedColumns: ['id'];
           },
         ];

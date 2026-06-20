@@ -26,12 +26,16 @@ import {
   getFoodOrderItems,
   getMenuCategories,
   getMenuItems,
+  getPartnerNotificationsByPartner,
+  getPartnerOrderNotifications,
   getPartnerUsers,
   getRestaurants,
   getRiders,
   getServiceCategories,
   getServiceSubcategories,
+  getUnreadPartnerNotificationCount,
   assignPartnerUserFoundation,
+  markPartnerNotificationRead,
   updateBusinessPartner,
   updateBookingStatus,
   updateFoodOrderStatus,
@@ -49,6 +53,7 @@ import {
   type AdminFoodOrderItem,
   type AdminMenuCategory,
   type AdminMenuItem,
+  type AdminPartnerOrderNotification,
   type AdminPartnerUser,
   type AdminRestaurant,
   type AdminRider,
@@ -211,6 +216,13 @@ export function App() {
   const [serviceSubcategories, setServiceSubcategories] = useState<AdminServiceSubcategory[]>([]);
   const [businessPartners, setBusinessPartners] = useState<AdminBusinessPartner[]>([]);
   const [partnerUsers, setPartnerUsers] = useState<AdminPartnerUser[]>([]);
+  const [partnerOrderNotifications, setPartnerOrderNotifications] = useState<
+    AdminPartnerOrderNotification[]
+  >([]);
+  const [previewPartnerNotifications, setPreviewPartnerNotifications] = useState<
+    AdminPartnerOrderNotification[]
+  >([]);
+  const [unreadPartnerNotificationCount, setUnreadPartnerNotificationCount] = useState(0);
   const [riders, setRiders] = useState<AdminRider[]>([]);
   const [restaurantForm, setRestaurantForm] = useState<RestaurantFormState>(emptyRestaurantForm);
   const [menuItemForm, setMenuItemForm] = useState<MenuItemFormState>(emptyMenuItemForm);
@@ -233,6 +245,7 @@ export function App() {
   const [savingMenuItemId, setSavingMenuItemId] = useState('');
   const [savingPartnerId, setSavingPartnerId] = useState('');
   const [savingPartnerUserId, setSavingPartnerUserId] = useState('');
+  const [markingPartnerNotificationId, setMarkingPartnerNotificationId] = useState('');
   const [savingRestaurantImageId, setSavingRestaurantImageId] = useState('');
   const [savingMenuItemImageId, setSavingMenuItemImageId] = useState('');
   const [uploadingRestaurantImageId, setUploadingRestaurantImageId] = useState('');
@@ -388,16 +401,27 @@ export function App() {
     setMarketplaceErrorMessage('');
 
     try {
-      const [categoryRows, subcategoryRows, partnerRows, partnerUserRows] = await Promise.all([
+      const [
+        categoryRows,
+        subcategoryRows,
+        partnerRows,
+        partnerUserRows,
+        notificationRows,
+        unreadNotificationCount,
+      ] = await Promise.all([
         getServiceCategories(),
         getServiceSubcategories(),
         getBusinessPartners(),
         getPartnerUsers(),
+        getPartnerOrderNotifications(),
+        getUnreadPartnerNotificationCount(),
       ]);
       setServiceCategories(categoryRows);
       setServiceSubcategories(subcategoryRows);
       setBusinessPartners(partnerRows);
       setPartnerUsers(partnerUserRows);
+      setPartnerOrderNotifications(notificationRows);
+      setUnreadPartnerNotificationCount(unreadNotificationCount);
       setPreviewPartnerId((currentPreviewPartnerId) => currentPreviewPartnerId || partnerRows[0]?.id || '');
     } catch (error) {
       setMarketplaceErrorMessage(`Unable to load marketplace data. ${getErrorMessage(error)}`);
@@ -405,6 +429,15 @@ export function App() {
       if (showLoading) {
         setIsMarketplaceLoading(false);
       }
+    }
+  }, []);
+
+  const loadPreviewPartnerNotifications = useCallback(async (partnerId: string) => {
+    try {
+      const rows = await getPartnerNotificationsByPartner(partnerId);
+      setPreviewPartnerNotifications(rows);
+    } catch (error) {
+      setMarketplaceErrorMessage(`Unable to load partner notifications. ${getErrorMessage(error)}`);
     }
   }, []);
 
@@ -462,16 +495,27 @@ export function App() {
     }
 
     try {
-      const [marketCategoryRows, marketSubcategoryRows, partnerRows, partnerUserRows] = await Promise.all([
+      const [
+        marketCategoryRows,
+        marketSubcategoryRows,
+        partnerRows,
+        partnerUserRows,
+        notificationRows,
+        unreadNotificationCount,
+      ] = await Promise.all([
         getServiceCategories(),
         getServiceSubcategories(),
         getBusinessPartners(),
         getPartnerUsers(),
+        getPartnerOrderNotifications(),
+        getUnreadPartnerNotificationCount(),
       ]);
       setServiceCategories(marketCategoryRows);
       setServiceSubcategories(marketSubcategoryRows);
       setBusinessPartners(partnerRows);
       setPartnerUsers(partnerUserRows);
+      setPartnerOrderNotifications(notificationRows);
+      setUnreadPartnerNotificationCount(unreadNotificationCount);
       setPreviewPartnerId((currentPreviewPartnerId) => currentPreviewPartnerId || partnerRows[0]?.id || '');
     } catch (error) {
       setMarketplaceErrorMessage(`Unable to load marketplace data. ${getErrorMessage(error)}`);
@@ -820,19 +864,50 @@ export function App() {
     }
   }
 
+  async function handleMarkPartnerNotificationRead(notificationId: string) {
+    setMarkingPartnerNotificationId(notificationId);
+    setMarketplaceMessage('');
+    setMarketplaceErrorMessage('');
+
+    try {
+      await markPartnerNotificationRead(notificationId);
+      setMarketplaceMessage('Partner notification marked as read.');
+      await loadMarketplace({ showLoading: false });
+
+      if (previewPartnerId) {
+        await loadPreviewPartnerNotifications(previewPartnerId);
+      }
+    } catch (error) {
+      setMarketplaceErrorMessage(`Unable to mark partner notification as read. ${getErrorMessage(error)}`);
+    } finally {
+      setMarkingPartnerNotificationId('');
+    }
+  }
+
   async function handlePreviewPartnerChange(partnerId: string) {
     setPreviewPartnerId(partnerId);
 
     if (!partnerId) {
+      setPreviewPartnerNotifications([]);
       return;
     }
 
     try {
       await getBusinessPartnerById(partnerId);
+      await loadPreviewPartnerNotifications(partnerId);
     } catch (error) {
       setMarketplaceErrorMessage(`Unable to load partner preview. ${getErrorMessage(error)}`);
     }
   }
+
+  useEffect(() => {
+    if (!adminAuthState.isAdmin || !previewPartnerId) {
+      setPreviewPartnerNotifications([]);
+      return;
+    }
+
+    void loadPreviewPartnerNotifications(previewPartnerId);
+  }, [adminAuthState.isAdmin, loadPreviewPartnerNotifications, previewPartnerId]);
 
   useEffect(() => {
     if (!adminAuthState.isAdmin) {
@@ -854,6 +929,7 @@ export function App() {
 
     function refreshFoodOrdersFromRealtime() {
       void loadFoodOrders({ showLoading: false });
+      void loadMarketplace({ showLoading: false });
     }
 
     const unsubscribeBookings = subscribeToAdminBookings(refreshBookingsFromRealtime, () => {
@@ -875,7 +951,7 @@ export function App() {
       clearInterval(bookingsPolling);
       clearInterval(foodOrdersPolling);
     };
-  }, [adminAuthState.isAdmin, loadBookings, loadFoodOrders, loadRiders]);
+  }, [adminAuthState.isAdmin, loadBookings, loadFoodOrders, loadMarketplace, loadRiders]);
 
   const filteredBookings = useMemo(() => {
     if (filter === 'all') {
@@ -912,6 +988,9 @@ export function App() {
   );
   const previewPartner = businessPartners.find((partner) => partner.id === previewPartnerId) ?? null;
   const previewPartnerUsers = partnerUsers.filter((user) => user.partner_id === previewPartnerId);
+  const previewUnreadNotificationCount = previewPartnerNotifications.filter(
+    (notification) => notification.status === 'unread'
+  ).length;
   const isRestaurantSaving = savingRestaurantId === (editingRestaurantId || 'new');
   const isMenuItemSaving = savingMenuItemId === (editingMenuItemId || 'new');
   const isPartnerSaving = savingPartnerId === (editingPartnerId || 'new');
@@ -1545,6 +1624,60 @@ export function App() {
 
             <div className="food-management-section">
               <div className="section-title-row">
+                <h3>Partner Orders / Notifications</h3>
+                <span className="count-pill">{unreadPartnerNotificationCount} unread</span>
+              </div>
+
+              {partnerOrderNotifications.length === 0 ? (
+                <p className="empty-state">No partner order notifications yet.</p>
+              ) : (
+                <div className="entity-list">
+                  {partnerOrderNotifications.map((notification) => (
+                    <article className="entity-card notification-card" key={notification.id}>
+                      <div className="entity-card-header">
+                        <div>
+                          <div className="notification-title-row">
+                            <h4>{notification.title}</h4>
+                            <span
+                              className={
+                                notification.status === 'unread' ? 'status-pill active' : 'status-pill'
+                              }>
+                              {notification.status}
+                            </span>
+                          </div>
+                          <p className="entity-meta">
+                            {getPartnerName(notification.partner_id, businessPartners)} - Food order:{' '}
+                            {notification.food_order_id
+                              ? notification.food_order_id.slice(0, 8)
+                              : 'No order reference'}
+                          </p>
+                          <p className="notification-message">{notification.message}</p>
+                          <p className="entity-meta">
+                            {formatDate(notification.created_at)}
+                            {notification.read_at ? ` - Read ${formatDate(notification.read_at)}` : ''}
+                          </p>
+                        </div>
+                        <div className="action-row">
+                          <button
+                            className="secondary-button"
+                            disabled={
+                              notification.status === 'read' ||
+                              markingPartnerNotificationId === notification.id
+                            }
+                            type="button"
+                            onClick={() => void handleMarkPartnerNotificationRead(notification.id)}>
+                            {markingPartnerNotificationId === notification.id ? 'Saving...' : 'Mark read'}
+                          </button>
+                        </div>
+                      </div>
+                    </article>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="food-management-section">
+              <div className="section-title-row">
                 <h3>Partner Dashboard Preview / My Shop</h3>
                 <label className="filter-control compact-filter">
                   <span>Preview partner</span>
@@ -1576,6 +1709,13 @@ export function App() {
                       {previewPartner.is_open ? 'Open' : 'Closed'}
                     </span>
                   </div>
+                  <div className="partner-notification-summary">
+                    <div>
+                      <p className="eyebrow">New orders</p>
+                      <strong>{previewUnreadNotificationCount} unread notifications</strong>
+                    </div>
+                    <span className="count-pill">{previewPartnerNotifications.length} latest</span>
+                  </div>
                   <div className="partner-preview-grid">
                     <PreviewField label="Description" value={previewPartner.description} />
                     <PreviewField label="Address" value={previewPartner.address} />
@@ -1586,7 +1726,47 @@ export function App() {
                     <PreviewField label="Active status" value={previewPartner.is_active ? 'Active' : 'Inactive'} />
                     <PreviewField label="Marketplace status" value={previewPartner.status} />
                   </div>
+                  <div className="preview-notification-list">
+                    {previewPartnerNotifications.length === 0 ? (
+                      <p className="empty-state">No new partner orders yet.</p>
+                    ) : (
+                      previewPartnerNotifications.slice(0, 5).map((notification) => (
+                        <article className="preview-notification-card" key={notification.id}>
+                          <div>
+                            <div className="notification-title-row">
+                              <h4>{notification.title}</h4>
+                              <span
+                                className={
+                                  notification.status === 'unread' ? 'status-pill active' : 'status-pill'
+                                }>
+                                {notification.status}
+                              </span>
+                            </div>
+                            <p className="notification-message">{notification.message}</p>
+                            <p className="entity-meta">
+                              Food order:{' '}
+                              {notification.food_order_id
+                                ? notification.food_order_id.slice(0, 8)
+                                : 'No order reference'}{' '}
+                              - {formatDate(notification.created_at)}
+                            </p>
+                          </div>
+                          <button
+                            className="secondary-button"
+                            disabled={
+                              notification.status === 'read' ||
+                              markingPartnerNotificationId === notification.id
+                            }
+                            type="button"
+                            onClick={() => void handleMarkPartnerNotificationRead(notification.id)}>
+                            {markingPartnerNotificationId === notification.id ? 'Saving...' : 'Mark read'}
+                          </button>
+                        </article>
+                      ))
+                    )}
+                  </div>
                   <p className="empty-state">Product/menu management coming in Phase 8D.</p>
+                  <p className="empty-state">Order management coming in Phase 8D/8E.</p>
                   <p className="entity-meta">
                     Preview users: {previewPartnerUsers.length || 'No linked partner users yet.'}
                   </p>

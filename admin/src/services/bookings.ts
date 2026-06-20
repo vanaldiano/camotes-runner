@@ -33,6 +33,7 @@ export type AdminServiceCategory = Tables<'service_categories'>;
 export type AdminServiceSubcategory = Tables<'service_subcategories'>;
 export type AdminBusinessPartner = Tables<'business_partners'>;
 export type AdminPartnerUser = Tables<'partner_users'>;
+export type AdminPartnerOrderNotification = Tables<'partner_order_notifications'>;
 export type AdminFoodOrder = Tables<'food_orders'> & {
   latest_rider_location_updated_at?: string | null;
 };
@@ -417,6 +418,76 @@ export async function assignPartnerUserFoundation(input: PartnerUserInput) {
   }
 
   return data;
+}
+
+export async function getPartnerOrderNotifications() {
+  const { data, error } = await supabase
+    .from('partner_order_notifications')
+    .select('*')
+    .order('created_at', { ascending: false })
+    .limit(100);
+
+  if (error) {
+    throw error;
+  }
+
+  return data ?? [];
+}
+
+export async function getPartnerNotificationsByPartner(partnerId: string) {
+  const { data, error } = await supabase
+    .from('partner_order_notifications')
+    .select('*')
+    .eq('partner_id', partnerId)
+    .order('created_at', { ascending: false })
+    .limit(25);
+
+  if (error) {
+    throw error;
+  }
+
+  return data ?? [];
+}
+
+export async function markPartnerNotificationRead(notificationId: string) {
+  const { data, error } = await supabase
+    .from('partner_order_notifications')
+    .update({
+      read_at: new Date().toISOString(),
+      status: 'read',
+    })
+    .eq('id', notificationId)
+    .select('*')
+    .maybeSingle();
+
+  if (error) {
+    throw error;
+  }
+
+  if (!data) {
+    throw new Error(`Partner notification ${notificationId} was not found.`);
+  }
+
+  return data;
+}
+
+export async function getUnreadPartnerNotificationCount(partnerId?: string) {
+  let query = supabase
+    .from('partner_order_notifications')
+    .select('id', { count: 'exact', head: true })
+    .eq('status', 'unread');
+
+  if (partnerId) {
+    query = query.eq('partner_id', partnerId);
+  }
+
+  const { count, error } = await query;
+
+  if (error) {
+    throw error;
+  }
+
+  return count ?? 0;
 }
 
 export async function createRestaurant(input: RestaurantInput) {
