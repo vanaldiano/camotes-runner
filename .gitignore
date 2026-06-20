@@ -50,3 +50,7 @@ example
 expo-start.err.log
 expo-start.out.log
 
+
+# Local database backups
+backups/
+
