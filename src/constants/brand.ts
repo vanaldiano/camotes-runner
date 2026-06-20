@@ -1,0 +1,16 @@
+export const BrandColors = {
+  darkGreen: '#0B6B22',
+  green: '#1E8E3E',
+  limeGreen: '#8BC34A',
+  yellow: '#FFC928',
+  white: '#FFFFFF',
+  background: '#F6F8F7',
+  softGreen: '#E8F5EC',
+  paleYellow: '#FFF5CB',
+  mint: '#FBFDFC',
+  ink: '#12321F',
+  mutedInk: '#66776B',
+  border: '#DCE8DF',
+  cardShadow: '#062B13',
+  danger: '#D93F35',
+} as const;

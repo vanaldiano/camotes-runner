@@ -1,0 +1,694 @@
+import { supabase } from '../lib/supabase';
+import {
+  notifyCustomerForBookingStatus,
+  notifyCustomerForFoodStatus,
+  notifyRiderForBookingAssignment,
+  notifyRiderForFoodAssignment,
+} from './notifications';
+
+import type {
+  BookingStatus,
+  FoodOrderStatus,
+  Tables,
+  TablesInsert,
+  TablesUpdate,
+} from '../../../src/types/database';
+import {
+  calculateDistanceKm,
+  estimateEtaMinutes,
+  formatDistance,
+  formatEta,
+} from '../../../src/services/eta-service';
+
+export type AdminBooking = Tables<'bookings'> & {
+  latest_rider_location_eta?: string | null;
+  latest_rider_location_updated_at?: string | null;
+};
+export type AdminRider = Tables<'riders'>;
+export type AdminRiderLocation = Tables<'rider_locations'>;
+export type AdminRestaurant = Tables<'restaurants'>;
+export type AdminMenuCategory = Tables<'menu_categories'>;
+export type AdminMenuItem = Tables<'menu_items'>;
+export type AdminFoodOrder = Tables<'food_orders'> & {
+  latest_rider_location_updated_at?: string | null;
+};
+export type AdminFoodOrderItem = Tables<'food_order_items'>;
+export type RestaurantInput = Pick<
+  TablesInsert<'restaurants'>,
+  | 'address'
+  | 'category'
+  | 'delivery_fee'
+  | 'estimated_delivery_time'
+  | 'image_url'
+  | 'is_active'
+  | 'latitude'
+  | 'longitude'
+  | 'name'
+>;
+export type MenuItemInput = Pick<
+  TablesInsert<'menu_items'>,
+  | 'category_id'
+  | 'description'
+  | 'image_url'
+  | 'is_available'
+  | 'name'
+  | 'price'
+  | 'restaurant_id'
+>;
+
+const restaurantImageBucket = 'restaurant-images';
+const menuImageBucket = 'menu-images';
+
+export class AdminBookingNotFoundError extends Error {
+  constructor(bookingId: string) {
+    super(`Booking ${bookingId} was not found.`);
+    this.name = 'AdminBookingNotFoundError';
+  }
+}
+
+export const bookingStatuses: BookingStatus[] = [
+  'pending',
+  'accepted',
+  'runner_arriving',
+  'in_progress',
+  'completed',
+  'cancelled',
+];
+
+export const foodOrderStatuses: FoodOrderStatus[] = [
+  'pending',
+  'accepted',
+  'preparing',
+  'picked_up',
+  'on_the_way',
+  'delivered',
+  'cancelled',
+];
+
+export async function getAllBookings() {
+  const { data, error } = await supabase
+    .from('bookings')
+    .select('*')
+    .order('created_at', { ascending: false });
+
+  if (error) {
+    throw error;
+  }
+
+  return addLatestRiderLocationTimestamps(data ?? []);
+}
+
+async function addLatestRiderLocationTimestamps(bookings: Tables<'bookings'>[]) {
+  if (bookings.length === 0) {
+    return [];
+  }
+
+  const activeBookingIds = bookings
+    .filter((booking) => booking.status !== 'completed' && booking.status !== 'cancelled')
+    .map((booking) => booking.id);
+
+  if (activeBookingIds.length === 0) {
+    return bookings.map((booking) => ({
+      ...booking,
+      latest_rider_location_eta: null,
+      latest_rider_location_updated_at: null,
+    }));
+  }
+
+  const { data: riderLocations, error } = await supabase
+    .from('rider_locations')
+    .select('*')
+    .in('booking_id', activeBookingIds)
+    .order('updated_at', { ascending: false });
+
+  if (error) {
+    console.error('Unable to load latest rider locations for admin dashboard', error);
+    return bookings.map((booking) => ({
+      ...booking,
+      latest_rider_location_eta: null,
+      latest_rider_location_updated_at: null,
+    }));
+  }
+
+  const latestByBookingId = new Map<string, AdminRiderLocation>();
+
+  for (const riderLocation of riderLocations ?? []) {
+    if (riderLocation.booking_id && !latestByBookingId.has(riderLocation.booking_id)) {
+      latestByBookingId.set(riderLocation.booking_id, riderLocation);
+    }
+  }
+
+  return bookings.map((booking) => ({
+    ...booking,
+    latest_rider_location_eta: getAdminBookingEta(
+      booking,
+      latestByBookingId.get(booking.id) ?? null
+    ),
+    latest_rider_location_updated_at:
+      latestByBookingId.get(booking.id)?.updated_at ?? null,
+  }));
+}
+
+function getAdminBookingEta(
+  booking: Tables<'bookings'>,
+  riderLocation: AdminRiderLocation | null
+) {
+  if (!riderLocation || booking.status === 'completed' || booking.status === 'cancelled') {
+    return null;
+  }
+
+  const target =
+    booking.status === 'in_progress'
+      ? {
+          label: 'Rider to destination',
+          latitude: booking.destination_lat,
+          longitude: booking.destination_lng,
+        }
+      : {
+          label: 'Rider to pickup',
+          latitude: booking.pickup_lat,
+          longitude: booking.pickup_lng,
+        };
+  const distanceKm = calculateDistanceKm(
+    riderLocation.latitude,
+    riderLocation.longitude,
+    target.latitude,
+    target.longitude
+  );
+  const etaMinutes = estimateEtaMinutes(distanceKm);
+
+  if (distanceKm === null || etaMinutes === null) {
+    return null;
+  }
+
+  return `${target.label}: ${formatDistance(distanceKm)} / ${formatEta(etaMinutes)}`;
+}
+
+export async function getRiders() {
+  const { data, error } = await supabase
+    .from('riders')
+    .select('*')
+    .order('full_name', { ascending: true });
+
+  if (error) {
+    throw error;
+  }
+
+  return data ?? [];
+}
+
+export async function getRestaurants() {
+  const { data, error } = await supabase
+    .from('restaurants')
+    .select('*')
+    .order('name', { ascending: true });
+
+  if (error) {
+    throw error;
+  }
+
+  return data ?? [];
+}
+
+export async function getMenuItems() {
+  const { data, error } = await supabase
+    .from('menu_items')
+    .select('*')
+    .order('restaurant_id', { ascending: true })
+    .order('display_order', { ascending: true })
+    .order('name', { ascending: true });
+
+  if (error) {
+    throw error;
+  }
+
+  return data ?? [];
+}
+
+export async function getMenuCategories() {
+  const { data, error } = await supabase
+    .from('menu_categories')
+    .select('*')
+    .order('restaurant_id', { ascending: true })
+    .order('display_order', { ascending: true })
+    .order('name', { ascending: true });
+
+  if (error) {
+    throw error;
+  }
+
+  return data ?? [];
+}
+
+export async function createRestaurant(input: RestaurantInput) {
+  const { data, error } = await supabase
+    .from('restaurants')
+    .insert(input)
+    .select('*')
+    .maybeSingle();
+
+  if (error) {
+    throw error;
+  }
+
+  if (!data) {
+    throw new Error('Supabase did not return the created restaurant.');
+  }
+
+  await ensureDefaultMenuCategory(data.id);
+
+  return data;
+}
+
+export async function updateRestaurant(
+  restaurantId: string,
+  input: TablesUpdate<'restaurants'>
+) {
+  const { data, error } = await supabase
+    .from('restaurants')
+    .update({ ...input, updated_at: new Date().toISOString() })
+    .eq('id', restaurantId)
+    .select('*')
+    .maybeSingle();
+
+  if (error) {
+    throw error;
+  }
+
+  if (!data) {
+    throw new Error(`Restaurant ${restaurantId} was not found.`);
+  }
+
+  return data;
+}
+
+export async function updateRestaurantOpenStatus(restaurantId: string, isOpen: boolean) {
+  return updateRestaurant(restaurantId, { is_active: isOpen });
+}
+
+export async function deleteRestaurant(restaurantId: string) {
+  const { error } = await supabase
+    .from('restaurants')
+    .delete()
+    .eq('id', restaurantId);
+
+  if (error) {
+    throw error;
+  }
+}
+
+export async function updateRestaurantImageUrl(restaurantId: string, imageUrl: string | null) {
+  const { data, error } = await supabase
+    .from('restaurants')
+    .update({ image_url: imageUrl, updated_at: new Date().toISOString() })
+    .eq('id', restaurantId)
+    .select('*')
+    .maybeSingle();
+
+  if (error) {
+    throw error;
+  }
+
+  if (!data) {
+    throw new Error(`Restaurant ${restaurantId} was not found.`);
+  }
+
+  return data;
+}
+
+export async function uploadRestaurantImageFile(restaurantId: string, file: File) {
+  return uploadImageFile(restaurantImageBucket, restaurantId, file);
+}
+
+export async function updateMenuItemImageUrl(menuItemId: string, imageUrl: string | null) {
+  const { data, error } = await supabase
+    .from('menu_items')
+    .update({ image_url: imageUrl, updated_at: new Date().toISOString() })
+    .eq('id', menuItemId)
+    .select('*')
+    .maybeSingle();
+
+  if (error) {
+    throw error;
+  }
+
+  if (!data) {
+    throw new Error(`Menu item ${menuItemId} was not found.`);
+  }
+
+  return data;
+}
+
+export async function uploadMenuItemImageFile(menuItemId: string, file: File) {
+  return uploadImageFile(menuImageBucket, menuItemId, file);
+}
+
+export async function createMenuItem(input: MenuItemInput) {
+  const { data, error } = await supabase
+    .from('menu_items')
+    .insert(input)
+    .select('*')
+    .maybeSingle();
+
+  if (error) {
+    throw error;
+  }
+
+  if (!data) {
+    throw new Error('Supabase did not return the created menu item.');
+  }
+
+  return data;
+}
+
+export async function updateMenuItem(menuItemId: string, input: TablesUpdate<'menu_items'>) {
+  const { data, error } = await supabase
+    .from('menu_items')
+    .update({ ...input, updated_at: new Date().toISOString() })
+    .eq('id', menuItemId)
+    .select('*')
+    .maybeSingle();
+
+  if (error) {
+    throw error;
+  }
+
+  if (!data) {
+    throw new Error(`Menu item ${menuItemId} was not found.`);
+  }
+
+  return data;
+}
+
+export async function updateMenuItemAvailability(menuItemId: string, isAvailable: boolean) {
+  return updateMenuItem(menuItemId, { is_available: isAvailable });
+}
+
+export async function deleteMenuItem(menuItemId: string) {
+  const { error } = await supabase
+    .from('menu_items')
+    .delete()
+    .eq('id', menuItemId);
+
+  if (error) {
+    throw error;
+  }
+}
+
+export async function getAllFoodOrders() {
+  const { data, error } = await supabase
+    .from('food_orders')
+    .select('*')
+    .order('created_at', { ascending: false });
+
+  if (error) {
+    throw error;
+  }
+
+  return addLatestFoodRiderLocationTimestamps(data ?? []);
+}
+
+async function addLatestFoodRiderLocationTimestamps(foodOrders: AdminFoodOrder[]) {
+  if (foodOrders.length === 0) {
+    return [];
+  }
+
+  const activeFoodOrderIds = foodOrders
+    .filter((foodOrder) => foodOrder.status !== 'delivered' && foodOrder.status !== 'cancelled')
+    .map((foodOrder) => foodOrder.id);
+
+  if (activeFoodOrderIds.length === 0) {
+    return foodOrders.map((foodOrder) => ({
+      ...foodOrder,
+      latest_rider_location_updated_at: null,
+    }));
+  }
+
+  const { data: riderLocations, error } = await supabase
+    .from('rider_locations')
+    .select('*')
+    .in('food_order_id', activeFoodOrderIds)
+    .order('updated_at', { ascending: false });
+
+  if (error) {
+    console.error('Unable to load latest food rider locations for admin dashboard', error);
+    return foodOrders.map((foodOrder) => ({
+      ...foodOrder,
+      latest_rider_location_updated_at: null,
+    }));
+  }
+
+  const latestByFoodOrderId = new Map<string, AdminRiderLocation>();
+
+  for (const riderLocation of riderLocations ?? []) {
+    if (riderLocation.food_order_id && !latestByFoodOrderId.has(riderLocation.food_order_id)) {
+      latestByFoodOrderId.set(riderLocation.food_order_id, riderLocation);
+    }
+  }
+
+  return foodOrders.map((foodOrder) => ({
+    ...foodOrder,
+    latest_rider_location_updated_at:
+      latestByFoodOrderId.get(foodOrder.id)?.updated_at ?? null,
+  }));
+}
+
+async function uploadImageFile(bucketName: string, entityId: string, file: File) {
+  if (!file.type.startsWith('image/')) {
+    throw new Error('Please choose an image file.');
+  }
+
+  const filePath = `${sanitizePathPart(entityId)}/${sanitizePathPart(entityId)}-${Date.now()}${getSafeFileExtension(file)}`;
+  const { error } = await supabase.storage.from(bucketName).upload(filePath, file, {
+    cacheControl: '3600',
+    upsert: false,
+  });
+
+  if (error) {
+    throw error;
+  }
+
+  const { data } = supabase.storage.from(bucketName).getPublicUrl(filePath);
+
+  if (!data.publicUrl) {
+    throw new Error('Supabase did not return a public image URL.');
+  }
+
+  return data.publicUrl;
+}
+
+function getSafeFileExtension(file: File) {
+  const extensionFromName = file.name.split('.').pop()?.toLowerCase();
+  const extensionFromType = file.type.split('/').pop()?.toLowerCase();
+  const rawExtension = extensionFromName && extensionFromName !== file.name
+    ? extensionFromName
+    : extensionFromType;
+  const safeExtension = rawExtension?.replace(/[^a-z0-9]/g, '') || 'jpg';
+
+  return `.${safeExtension}`;
+}
+
+function sanitizePathPart(value: string) {
+  return value.replace(/[^a-zA-Z0-9-]/g, '-');
+}
+
+async function ensureDefaultMenuCategory(restaurantId: string) {
+  const { error } = await supabase
+    .from('menu_categories')
+    .insert({
+      display_order: 999,
+      is_active: true,
+      name: 'General',
+      restaurant_id: restaurantId,
+    });
+
+  if (error && error.code !== '23505') {
+    throw error;
+  }
+}
+
+export async function getFoodOrderItems(foodOrderIds: string[]) {
+  if (foodOrderIds.length === 0) {
+    return [];
+  }
+
+  const { data, error } = await supabase
+    .from('food_order_items')
+    .select('*')
+    .in('food_order_id', foodOrderIds)
+    .order('created_at', { ascending: true });
+
+  if (error) {
+    throw error;
+  }
+
+  return data ?? [];
+}
+
+export async function getRiderById(riderId: string) {
+  const { data, error } = await supabase
+    .from('riders')
+    .select('*')
+    .eq('id', riderId)
+    .maybeSingle();
+
+  if (error) {
+    throw error;
+  }
+
+  if (!data) {
+    throw new Error(`Rider ${riderId} was not found.`);
+  }
+
+  return data;
+}
+
+export async function assignRiderToBooking(bookingId: string, riderId: string | null) {
+  const { data, error } = await supabase
+    .from('bookings')
+    .update({
+      assigned_rider_id: riderId,
+      rider_id: riderId,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', bookingId)
+    .select('*')
+    .maybeSingle();
+
+  if (error) {
+    throw error;
+  }
+
+  if (!data) {
+    const notFoundError = new AdminBookingNotFoundError(bookingId);
+    throw notFoundError;
+  }
+
+  void notifyRiderForBookingAssignment(bookingId, riderId).catch((notificationError) => {
+    console.error('Failed to send rider booking assignment notification', {
+      bookingId,
+      error: notificationError,
+      riderId,
+    });
+  });
+
+  return data;
+}
+
+export async function updateBookingStatus(bookingId: string, status: BookingStatus) {
+  const { data, error } = await supabase
+    .from('bookings')
+    .update({ status, updated_at: new Date().toISOString() })
+    .eq('id', bookingId)
+    .select('*')
+    .maybeSingle();
+
+  if (error) {
+    throw error;
+  }
+
+  if (!data) {
+    const notFoundError = new AdminBookingNotFoundError(bookingId);
+    throw notFoundError;
+  }
+
+  const { error: statusLogError } = await supabase.from('booking_status_logs').insert({
+    booking_id: bookingId,
+    message: `Admin updated booking status to ${status}.`,
+    status,
+  });
+
+  if (statusLogError) {
+    throw statusLogError;
+  }
+
+  void notifyCustomerForBookingStatus(bookingId, data.customer_id, status).catch(
+    (notificationError) => {
+      console.error('Failed to send customer booking status notification', {
+        bookingId,
+        error: notificationError,
+        status,
+      });
+    }
+  );
+
+  return data;
+}
+
+export async function updateFoodOrderStatus(foodOrderId: string, status: FoodOrderStatus) {
+  const { data, error } = await supabase
+    .from('food_orders')
+    .update({ status, updated_at: new Date().toISOString() })
+    .eq('id', foodOrderId)
+    .select('*')
+    .maybeSingle();
+
+  if (error) {
+    console.error('Supabase failed to update food order status', {
+      error,
+      foodOrderId,
+      status,
+    });
+    throw error;
+  }
+
+  if (!data) {
+    throw new Error(`Food order ${foodOrderId} was not found.`);
+  }
+
+  const { error: statusLogError } = await supabase.from('food_order_status_logs').insert({
+    food_order_id: foodOrderId,
+    message: `Admin updated food order status to ${status}.`,
+    status,
+  });
+
+  if (statusLogError) {
+    console.error('Supabase failed to insert food order status log', {
+      error: statusLogError,
+      foodOrderId,
+      status,
+    });
+  }
+
+  void notifyCustomerForFoodStatus(foodOrderId, data.customer_id, status).catch(
+    (notificationError) => {
+      console.error('Failed to send customer food order status notification', {
+        error: notificationError,
+        foodOrderId,
+        status,
+      });
+    }
+  );
+
+  return data;
+}
+
+export async function assignRiderToFoodOrder(foodOrderId: string, riderId: string | null) {
+  const { data, error } = await supabase
+    .from('food_orders')
+    .update({
+      assigned_rider_id: riderId,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', foodOrderId)
+    .select('*')
+    .maybeSingle();
+
+  if (error) {
+    throw error;
+  }
+
+  if (!data) {
+    throw new Error(`Food order ${foodOrderId} was not found.`);
+  }
+
+  void notifyRiderForFoodAssignment(foodOrderId, riderId).catch((notificationError) => {
+    console.error('Failed to send rider food assignment notification', {
+      error: notificationError,
+      foodOrderId,
+      riderId,
+    });
+  });
+
+  return data;
+}
