@@ -29,6 +29,9 @@ export type AdminRiderLocation = Tables<'rider_locations'>;
 export type AdminRestaurant = Tables<'restaurants'>;
 export type AdminMenuCategory = Tables<'menu_categories'>;
 export type AdminMenuItem = Tables<'menu_items'>;
+export type AdminServiceCategory = Tables<'service_categories'>;
+export type AdminServiceSubcategory = Tables<'service_subcategories'>;
+export type AdminBusinessPartner = Tables<'business_partners'>;
 export type AdminFoodOrder = Tables<'food_orders'> & {
   latest_rider_location_updated_at?: string | null;
 };
@@ -54,6 +57,24 @@ export type MenuItemInput = Pick<
   | 'name'
   | 'price'
   | 'restaurant_id'
+>;
+export type BusinessPartnerInput = Pick<
+  TablesInsert<'business_partners'>,
+  | 'address'
+  | 'category_id'
+  | 'delivery_fee_label'
+  | 'description'
+  | 'estimated_time'
+  | 'image_url'
+  | 'is_active'
+  | 'is_open'
+  | 'latitude'
+  | 'longitude'
+  | 'name'
+  | 'phone'
+  | 'rating'
+  | 'restaurant_id'
+  | 'subcategory_id'
 >;
 
 const restaurantImageBucket = 'restaurant-images';
@@ -238,6 +259,88 @@ export async function getMenuCategories() {
   }
 
   return data ?? [];
+}
+
+export async function getServiceCategories() {
+  const { data, error } = await supabase
+    .from('service_categories')
+    .select('*')
+    .order('sort_order', { ascending: true })
+    .order('name', { ascending: true });
+
+  if (error) {
+    throw error;
+  }
+
+  return data ?? [];
+}
+
+export async function getServiceSubcategories() {
+  const { data, error } = await supabase
+    .from('service_subcategories')
+    .select('*')
+    .order('category_id', { ascending: true })
+    .order('sort_order', { ascending: true })
+    .order('name', { ascending: true });
+
+  if (error) {
+    throw error;
+  }
+
+  return data ?? [];
+}
+
+export async function getBusinessPartners() {
+  const { data, error } = await supabase
+    .from('business_partners')
+    .select('*')
+    .order('name', { ascending: true });
+
+  if (error) {
+    throw error;
+  }
+
+  return data ?? [];
+}
+
+export async function createBusinessPartner(input: BusinessPartnerInput) {
+  const { data, error } = await supabase
+    .from('business_partners')
+    .insert(input)
+    .select('*')
+    .maybeSingle();
+
+  if (error) {
+    throw error;
+  }
+
+  if (!data) {
+    throw new Error('Supabase did not return the created partner shop.');
+  }
+
+  return data;
+}
+
+export async function updateBusinessPartner(
+  partnerId: string,
+  input: TablesUpdate<'business_partners'>
+) {
+  const { data, error } = await supabase
+    .from('business_partners')
+    .update({ ...input, updated_at: new Date().toISOString() })
+    .eq('id', partnerId)
+    .select('*')
+    .maybeSingle();
+
+  if (error) {
+    throw error;
+  }
+
+  if (!data) {
+    throw new Error(`Partner shop ${partnerId} was not found.`);
+  }
+
+  return data;
 }
 
 export async function createRestaurant(input: RestaurantInput) {

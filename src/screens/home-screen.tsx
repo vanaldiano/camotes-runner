@@ -1,5 +1,6 @@
 import { Image } from 'expo-image';
-import { router } from 'expo-router';
+import { router, type Href } from 'expo-router';
+import { useEffect, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { AppIcon } from '@/components/app-icon';
@@ -8,9 +9,36 @@ import { PrimaryButton } from '@/components/primary-button';
 import { SectionHeader } from '@/components/section-header';
 import { ServiceCard } from '@/components/service-card';
 import { BrandColors } from '@/constants/brand';
-import { customerServices, promotions, quickActions } from '@/constants/services';
+import { promotions, quickActions, type CustomerService } from '@/constants/services';
+import {
+  getServiceCategories,
+  sampleServiceCategories,
+  type ServiceCategory,
+} from '@/services/category-service';
 
 export function HomeScreen() {
+  const [marketplaceCategories, setMarketplaceCategories] = useState<ServiceCategory[]>(
+    sampleServiceCategories
+  );
+
+  useEffect(() => {
+    let isMounted = true;
+
+    async function loadCategories() {
+      const categories = await getServiceCategories();
+
+      if (isMounted && categories.length > 0) {
+        setMarketplaceCategories(categories);
+      }
+    }
+
+    loadCategories();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
   return (
     <AppScreen>
       <View style={styles.locationRow}>
@@ -75,18 +103,19 @@ export function HomeScreen() {
       <View style={styles.sectionBlock}>
         <SectionHeader eyebrow="Services" title="Choose a service" />
         <View style={styles.serviceGrid}>
-          {customerServices.map((service) => (
+          {marketplaceCategories.map((category) => (
             <ServiceCard
-              key={service.title}
+              key={category.id}
               compact
-              service={service}
-              onPress={
-                service.title === 'Groceries'
-                  ? () => {
-                      router.navigate('/restaurants');
-                    }
-                  : undefined
-              }
+              service={mapCategoryToService(category)}
+              onPress={() => {
+                console.log('CATEGORY_SELECTED', {
+                  categoryId: category.id,
+                  categoryName: category.name,
+                  categorySlug: category.slug,
+                });
+                router.push(`/category/${category.id}` as Href);
+              }}
             />
           ))}
         </View>
@@ -121,6 +150,57 @@ export function HomeScreen() {
       </View>
     </AppScreen>
   );
+}
+
+function mapCategoryToService(category: ServiceCategory): CustomerService {
+  return {
+    accentColor: getCategoryAccent(category.slug),
+    description: category.description ?? 'Local Camotes Runner service',
+    icon: getCategoryIcon(category.slug),
+    title: category.name,
+  };
+}
+
+function getCategoryAccent(slug: string) {
+  switch (slug) {
+    case 'restaurants-food':
+      return BrandColors.yellow;
+    case 'groceries':
+      return BrandColors.limeGreen;
+    case 'medicine-pharmacy':
+      return BrandColors.darkGreen;
+    case 'school-supplies':
+      return '#E7A900';
+    case 'tours':
+      return '#2E7D32';
+    case 'errands':
+      return '#6FBA2C';
+    case 'ride':
+      return BrandColors.green;
+    default:
+      return BrandColors.green;
+  }
+}
+
+function getCategoryIcon(slug: string) {
+  switch (slug) {
+    case 'restaurants-food':
+      return { ios: 'fork.knife', android: 'restaurant', web: 'restaurant' };
+    case 'groceries':
+      return { ios: 'basket', android: 'shopping_basket', web: 'shopping_basket' };
+    case 'medicine-pharmacy':
+      return { ios: 'cross.case', android: 'medical_services', web: 'medical_services' };
+    case 'school-supplies':
+      return { ios: 'doc.text', android: 'edit_note', web: 'edit_note' };
+    case 'tours':
+      return { ios: 'beach.umbrella', android: 'beach_access', web: 'beach_access' };
+    case 'errands':
+      return { ios: 'shippingbox', android: 'package_2', web: 'package_2' };
+    case 'ride':
+      return { ios: 'motorcycle', android: 'two_wheeler', web: 'two_wheeler' };
+    default:
+      return { ios: 'square.grid.2x2', android: 'apps', web: 'apps' };
+  }
 }
 
 type SearchRowProps = {

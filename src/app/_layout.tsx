@@ -20,6 +20,8 @@ export default function RootLayout() {
             <AnimatedSplashOverlay />
             <Stack screenOptions={{ headerShown: false }}>
               <Stack.Screen name="(tabs)" />
+              <Stack.Screen name="category/[id]" />
+              <Stack.Screen name="partner/[id]" />
               <Stack.Screen name="restaurants" />
               <Stack.Screen name="restaurant/[id]" />
               <Stack.Screen name="cart" />

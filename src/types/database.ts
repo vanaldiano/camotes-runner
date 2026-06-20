@@ -361,6 +361,170 @@ export type Database = {
         };
         Relationships: [];
       };
+      service_categories: {
+        Row: {
+          created_at: string;
+          description: string | null;
+          icon: string | null;
+          id: string;
+          is_active: boolean;
+          name: string;
+          slug: string;
+          sort_order: number;
+          updated_at: string;
+        };
+        Insert: {
+          created_at?: string;
+          description?: string | null;
+          icon?: string | null;
+          id?: string;
+          is_active?: boolean;
+          name: string;
+          slug: string;
+          sort_order?: number;
+          updated_at?: string;
+        };
+        Update: {
+          created_at?: string;
+          description?: string | null;
+          icon?: string | null;
+          id?: string;
+          is_active?: boolean;
+          name?: string;
+          slug?: string;
+          sort_order?: number;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
+      service_subcategories: {
+        Row: {
+          category_id: string | null;
+          created_at: string;
+          description: string | null;
+          icon: string | null;
+          id: string;
+          is_active: boolean;
+          name: string;
+          slug: string;
+          sort_order: number;
+          updated_at: string;
+        };
+        Insert: {
+          category_id?: string | null;
+          created_at?: string;
+          description?: string | null;
+          icon?: string | null;
+          id?: string;
+          is_active?: boolean;
+          name: string;
+          slug: string;
+          sort_order?: number;
+          updated_at?: string;
+        };
+        Update: {
+          category_id?: string | null;
+          created_at?: string;
+          description?: string | null;
+          icon?: string | null;
+          id?: string;
+          is_active?: boolean;
+          name?: string;
+          slug?: string;
+          sort_order?: number;
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'service_subcategories_category_id_fkey';
+            columns: ['category_id'];
+            referencedRelation: 'service_categories';
+            referencedColumns: ['id'];
+          },
+        ];
+      };
+      business_partners: {
+        Row: {
+          address: string | null;
+          category_id: string | null;
+          created_at: string;
+          delivery_fee_label: string | null;
+          description: string | null;
+          estimated_time: string | null;
+          id: string;
+          image_url: string | null;
+          is_active: boolean;
+          is_open: boolean;
+          latitude: number | null;
+          longitude: number | null;
+          name: string;
+          phone: string | null;
+          rating: number | null;
+          restaurant_id: string | null;
+          subcategory_id: string | null;
+          updated_at: string;
+        };
+        Insert: {
+          address?: string | null;
+          category_id?: string | null;
+          created_at?: string;
+          delivery_fee_label?: string | null;
+          description?: string | null;
+          estimated_time?: string | null;
+          id?: string;
+          image_url?: string | null;
+          is_active?: boolean;
+          is_open?: boolean;
+          latitude?: number | null;
+          longitude?: number | null;
+          name: string;
+          phone?: string | null;
+          rating?: number | null;
+          restaurant_id?: string | null;
+          subcategory_id?: string | null;
+          updated_at?: string;
+        };
+        Update: {
+          address?: string | null;
+          category_id?: string | null;
+          created_at?: string;
+          delivery_fee_label?: string | null;
+          description?: string | null;
+          estimated_time?: string | null;
+          id?: string;
+          image_url?: string | null;
+          is_active?: boolean;
+          is_open?: boolean;
+          latitude?: number | null;
+          longitude?: number | null;
+          name?: string;
+          phone?: string | null;
+          rating?: number | null;
+          restaurant_id?: string | null;
+          subcategory_id?: string | null;
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'business_partners_category_id_fkey';
+            columns: ['category_id'];
+            referencedRelation: 'service_categories';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'business_partners_restaurant_id_fkey';
+            columns: ['restaurant_id'];
+            referencedRelation: 'restaurants';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'business_partners_subcategory_id_fkey';
+            columns: ['subcategory_id'];
+            referencedRelation: 'service_subcategories';
+            referencedColumns: ['id'];
+          },
+        ];
+      };
       restaurants: {
         Row: {
           address: string;

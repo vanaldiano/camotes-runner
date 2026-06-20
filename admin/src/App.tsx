@@ -13,6 +13,7 @@ import {
   assignRiderToBooking,
   assignRiderToFoodOrder,
   bookingStatuses,
+  createBusinessPartner,
   createMenuItem,
   createRestaurant,
   deleteMenuItem,
@@ -20,11 +21,15 @@ import {
   foodOrderStatuses,
   getAllBookings,
   getAllFoodOrders,
+  getBusinessPartners,
   getFoodOrderItems,
   getMenuCategories,
   getMenuItems,
   getRestaurants,
   getRiders,
+  getServiceCategories,
+  getServiceSubcategories,
+  updateBusinessPartner,
   updateBookingStatus,
   updateFoodOrderStatus,
   updateMenuItem,
@@ -36,12 +41,16 @@ import {
   uploadMenuItemImageFile,
   uploadRestaurantImageFile,
   type AdminBooking,
+  type AdminBusinessPartner,
   type AdminFoodOrder,
   type AdminFoodOrderItem,
   type AdminMenuCategory,
   type AdminMenuItem,
   type AdminRestaurant,
   type AdminRider,
+  type AdminServiceCategory,
+  type AdminServiceSubcategory,
+  type BusinessPartnerInput,
   type MenuItemInput,
   type RestaurantInput,
 } from './services/bookings';
@@ -91,6 +100,23 @@ type MenuItemFormState = {
   price: string;
   restaurantId: string;
 };
+type PartnerFormState = {
+  address: string;
+  categoryId: string;
+  deliveryFeeLabel: string;
+  description: string;
+  estimatedTime: string;
+  imageUrl: string;
+  isActive: boolean;
+  isOpen: boolean;
+  latitude: string;
+  longitude: string;
+  name: string;
+  phone: string;
+  rating: string;
+  restaurantId: string;
+  subcategoryId: string;
+};
 
 const emptyRestaurantForm: RestaurantFormState = {
   address: '',
@@ -114,6 +140,24 @@ const emptyMenuItemForm: MenuItemFormState = {
   restaurantId: '',
 };
 
+const emptyPartnerForm: PartnerFormState = {
+  address: '',
+  categoryId: '',
+  deliveryFeeLabel: '',
+  description: '',
+  estimatedTime: '',
+  imageUrl: '',
+  isActive: true,
+  isOpen: true,
+  latitude: '',
+  longitude: '',
+  name: '',
+  phone: '',
+  rating: '',
+  restaurantId: '',
+  subcategoryId: '',
+};
+
 export function App() {
   const [adminAuthState, setAdminAuthState] = useState<AdminAuthState>({
     isAdmin: false,
@@ -127,21 +171,28 @@ export function App() {
   const [restaurants, setRestaurants] = useState<AdminRestaurant[]>([]);
   const [menuCategories, setMenuCategories] = useState<AdminMenuCategory[]>([]);
   const [menuItems, setMenuItems] = useState<AdminMenuItem[]>([]);
+  const [serviceCategories, setServiceCategories] = useState<AdminServiceCategory[]>([]);
+  const [serviceSubcategories, setServiceSubcategories] = useState<AdminServiceSubcategory[]>([]);
+  const [businessPartners, setBusinessPartners] = useState<AdminBusinessPartner[]>([]);
   const [riders, setRiders] = useState<AdminRider[]>([]);
   const [restaurantForm, setRestaurantForm] = useState<RestaurantFormState>(emptyRestaurantForm);
   const [menuItemForm, setMenuItemForm] = useState<MenuItemFormState>(emptyMenuItemForm);
+  const [partnerForm, setPartnerForm] = useState<PartnerFormState>(emptyPartnerForm);
   const [editingRestaurantId, setEditingRestaurantId] = useState('');
   const [editingMenuItemId, setEditingMenuItemId] = useState('');
+  const [editingPartnerId, setEditingPartnerId] = useState('');
   const [restaurantImageInputs, setRestaurantImageInputs] = useState<Record<string, string>>({});
   const [menuItemImageInputs, setMenuItemImageInputs] = useState<Record<string, string>>({});
   const [filter, setFilter] = useState<StatusFilter>('all');
   const [isLoading, setIsLoading] = useState(true);
   const [isFoodLoading, setIsFoodLoading] = useState(true);
   const [isFoodManagementLoading, setIsFoodManagementLoading] = useState(true);
+  const [isMarketplaceLoading, setIsMarketplaceLoading] = useState(true);
   const [updatingBookingId, setUpdatingBookingId] = useState('');
   const [updatingFoodOrderId, setUpdatingFoodOrderId] = useState('');
   const [savingRestaurantId, setSavingRestaurantId] = useState('');
   const [savingMenuItemId, setSavingMenuItemId] = useState('');
+  const [savingPartnerId, setSavingPartnerId] = useState('');
   const [savingRestaurantImageId, setSavingRestaurantImageId] = useState('');
   const [savingMenuItemImageId, setSavingMenuItemImageId] = useState('');
   const [uploadingRestaurantImageId, setUploadingRestaurantImageId] = useState('');
@@ -150,6 +201,8 @@ export function App() {
   const [foodErrorMessage, setFoodErrorMessage] = useState('');
   const [foodManagementMessage, setFoodManagementMessage] = useState('');
   const [foodManagementErrorMessage, setFoodManagementErrorMessage] = useState('');
+  const [marketplaceMessage, setMarketplaceMessage] = useState('');
+  const [marketplaceErrorMessage, setMarketplaceErrorMessage] = useState('');
   const [successMessage, setSuccessMessage] = useState('');
   const [isAdminAuthLoading, setIsAdminAuthLoading] = useState(true);
   const [isAdminAuthSubmitting, setIsAdminAuthSubmitting] = useState(false);
@@ -288,13 +341,39 @@ export function App() {
     }
   }, []);
 
+  const loadMarketplace = useCallback(async ({ showLoading = true }: LoadOptions = {}) => {
+    if (showLoading) {
+      setIsMarketplaceLoading(true);
+    }
+    setMarketplaceErrorMessage('');
+
+    try {
+      const [categoryRows, subcategoryRows, partnerRows] = await Promise.all([
+        getServiceCategories(),
+        getServiceSubcategories(),
+        getBusinessPartners(),
+      ]);
+      setServiceCategories(categoryRows);
+      setServiceSubcategories(subcategoryRows);
+      setBusinessPartners(partnerRows);
+    } catch (error) {
+      setMarketplaceErrorMessage(`Unable to load marketplace data. ${getErrorMessage(error)}`);
+    } finally {
+      if (showLoading) {
+        setIsMarketplaceLoading(false);
+      }
+    }
+  }, []);
+
   const refreshDashboard = useCallback(async () => {
     setIsLoading(true);
     setIsFoodLoading(true);
     setIsFoodManagementLoading(true);
+    setIsMarketplaceLoading(true);
     setErrorMessage('');
     setFoodErrorMessage('');
     setFoodManagementErrorMessage('');
+    setMarketplaceErrorMessage('');
 
     try {
       const [bookingRows, riderRows] = await Promise.all([getAllBookings(), getRiders()]);
@@ -337,6 +416,21 @@ export function App() {
       setFoodManagementErrorMessage(`Unable to load food management data. ${getErrorMessage(error)}`);
     } finally {
       setIsFoodManagementLoading(false);
+    }
+
+    try {
+      const [marketCategoryRows, marketSubcategoryRows, partnerRows] = await Promise.all([
+        getServiceCategories(),
+        getServiceSubcategories(),
+        getBusinessPartners(),
+      ]);
+      setServiceCategories(marketCategoryRows);
+      setServiceSubcategories(marketSubcategoryRows);
+      setBusinessPartners(partnerRows);
+    } catch (error) {
+      setMarketplaceErrorMessage(`Unable to load marketplace data. ${getErrorMessage(error)}`);
+    } finally {
+      setIsMarketplaceLoading(false);
     }
   }, []);
 
@@ -636,6 +730,32 @@ export function App() {
     }
   }
 
+  async function handlePartnerSave() {
+    setSavingPartnerId(editingPartnerId || 'new');
+    setMarketplaceMessage('');
+    setMarketplaceErrorMessage('');
+
+    try {
+      const input = getPartnerInput(partnerForm);
+
+      if (editingPartnerId) {
+        await updateBusinessPartner(editingPartnerId, input);
+        setMarketplaceMessage('Partner shop updated.');
+      } else {
+        await createBusinessPartner(input);
+        setMarketplaceMessage('Partner shop added.');
+      }
+
+      setPartnerForm(emptyPartnerForm);
+      setEditingPartnerId('');
+      await loadMarketplace({ showLoading: false });
+    } catch (error) {
+      setMarketplaceErrorMessage(`Unable to save partner shop. ${getErrorMessage(error)}`);
+    } finally {
+      setSavingPartnerId('');
+    }
+  }
+
   useEffect(() => {
     if (!adminAuthState.isAdmin) {
       return;
@@ -709,8 +829,12 @@ export function App() {
   const menuFormCategories = menuCategories.filter(
     (category) => category.restaurant_id === menuItemForm.restaurantId
   );
+  const partnerFormSubcategories = serviceSubcategories.filter(
+    (subcategory) => subcategory.category_id === partnerForm.categoryId
+  );
   const isRestaurantSaving = savingRestaurantId === (editingRestaurantId || 'new');
   const isMenuItemSaving = savingMenuItemId === (editingMenuItemId || 'new');
+  const isPartnerSaving = savingPartnerId === (editingPartnerId || 'new');
 
   if (isAdminAuthLoading) {
     return (
@@ -773,6 +897,367 @@ export function App() {
         <StatCard label="Total Food Orders" value={String(foodOrders.length)} />
         <StatCard label="Food Income" value={formatCurrency(deliveredFoodIncome)} />
         <StatCard label="Supabase" value={hasSupabaseConfig ? 'Connected' : 'Missing Env'} />
+      </section>
+
+      <section className="panel">
+        <div className="panel-header">
+          <div>
+            <p className="eyebrow">Marketplace</p>
+            <h2>Categories and partner shops</h2>
+          </div>
+        </div>
+
+        {marketplaceErrorMessage ? <p className="error-message">{marketplaceErrorMessage}</p> : null}
+        {marketplaceMessage ? <p className="success-message">{marketplaceMessage}</p> : null}
+
+        {isMarketplaceLoading ? (
+          <p className="empty-state">Loading marketplace data...</p>
+        ) : (
+          <div className="food-management">
+            <div className="food-management-section">
+              <div className="section-title-row">
+                <h3>Service categories</h3>
+                <span className="count-pill">{serviceCategories.length} categories</span>
+              </div>
+              {serviceCategories.length === 0 ? (
+                <p className="empty-state">No service categories found. Run the Phase 8A SQL migration.</p>
+              ) : (
+                <div className="entity-list compact-entity-grid">
+                  {serviceCategories.map((category) => (
+                    <article className="entity-card" key={category.id}>
+                      <div className="entity-card-header">
+                        <div>
+                          <h4>{category.name}</h4>
+                          <p className="entity-meta">
+                            {category.slug} - Sort {category.sort_order}
+                          </p>
+                          <span className={category.is_active ? 'status-pill active' : 'status-pill'}>
+                            {category.is_active ? 'Active' : 'Inactive'}
+                          </span>
+                        </div>
+                      </div>
+                    </article>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="food-management-section">
+              <div className="section-title-row">
+                <h3>Sub-categories</h3>
+                <span className="count-pill">{serviceSubcategories.length} sub-categories</span>
+              </div>
+              {serviceSubcategories.length === 0 ? (
+                <p className="empty-state">No sub-categories found.</p>
+              ) : (
+                <div className="entity-list compact-entity-grid">
+                  {serviceSubcategories.map((subcategory) => (
+                    <article className="entity-card" key={subcategory.id}>
+                      <div className="entity-card-header">
+                        <div>
+                          <h4>{subcategory.name}</h4>
+                          <p className="entity-meta">
+                            {getServiceCategoryName(subcategory.category_id, serviceCategories)} -{' '}
+                            {subcategory.slug}
+                          </p>
+                          <span className={subcategory.is_active ? 'status-pill active' : 'status-pill'}>
+                            {subcategory.is_active ? 'Active' : 'Inactive'}
+                          </span>
+                        </div>
+                      </div>
+                    </article>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="food-management-section">
+              <div className="section-title-row">
+                <h3>{editingPartnerId ? 'Edit partner shop' : 'Add partner shop'}</h3>
+                {editingPartnerId ? (
+                  <button
+                    className="secondary-button"
+                    type="button"
+                    onClick={() => {
+                      setEditingPartnerId('');
+                      setPartnerForm(emptyPartnerForm);
+                    }}>
+                    Cancel edit
+                  </button>
+                ) : null}
+              </div>
+
+              <form
+                className="management-form"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  void handlePartnerSave();
+                }}>
+                <div className="form-grid">
+                  <label className="form-field">
+                    <span>Name</span>
+                    <input
+                      required
+                      type="text"
+                      value={partnerForm.name}
+                      onChange={(event) =>
+                        setPartnerForm((current) => ({ ...current, name: event.target.value }))
+                      }
+                    />
+                  </label>
+                  <label className="form-field">
+                    <span>Category</span>
+                    <select
+                      required
+                      value={partnerForm.categoryId}
+                      onChange={(event) => {
+                        const nextCategoryId = event.target.value;
+                        setPartnerForm((current) => ({
+                          ...current,
+                          categoryId: nextCategoryId,
+                          subcategoryId: '',
+                        }));
+                      }}>
+                      <option value="">Choose category</option>
+                      {serviceCategories.map((category) => (
+                        <option key={category.id} value={category.id}>
+                          {category.name}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="form-field">
+                    <span>Sub-category</span>
+                    <select
+                      value={partnerForm.subcategoryId}
+                      onChange={(event) =>
+                        setPartnerForm((current) => ({
+                          ...current,
+                          subcategoryId: event.target.value,
+                        }))
+                      }>
+                      <option value="">Choose sub-category</option>
+                      {partnerFormSubcategories.map((subcategory) => (
+                        <option key={subcategory.id} value={subcategory.id}>
+                          {subcategory.name}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="form-field">
+                    <span>Linked restaurant</span>
+                    <select
+                      value={partnerForm.restaurantId}
+                      onChange={(event) =>
+                        setPartnerForm((current) => ({
+                          ...current,
+                          restaurantId: event.target.value,
+                        }))
+                      }>
+                      <option value="">No restaurant link</option>
+                      {restaurants.map((restaurant) => (
+                        <option key={restaurant.id} value={restaurant.id}>
+                          {restaurant.name}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="form-field">
+                    <span>Description</span>
+                    <input
+                      type="text"
+                      value={partnerForm.description}
+                      onChange={(event) =>
+                        setPartnerForm((current) => ({
+                          ...current,
+                          description: event.target.value,
+                        }))
+                      }
+                    />
+                  </label>
+                  <label className="form-field">
+                    <span>Address</span>
+                    <input
+                      type="text"
+                      value={partnerForm.address}
+                      onChange={(event) =>
+                        setPartnerForm((current) => ({
+                          ...current,
+                          address: event.target.value,
+                        }))
+                      }
+                    />
+                  </label>
+                  <label className="form-field">
+                    <span>Phone</span>
+                    <input
+                      type="tel"
+                      value={partnerForm.phone}
+                      onChange={(event) =>
+                        setPartnerForm((current) => ({ ...current, phone: event.target.value }))
+                      }
+                    />
+                  </label>
+                  <label className="form-field">
+                    <span>Rating</span>
+                    <input
+                      max="5"
+                      min="0"
+                      step="0.1"
+                      type="number"
+                      value={partnerForm.rating}
+                      onChange={(event) =>
+                        setPartnerForm((current) => ({ ...current, rating: event.target.value }))
+                      }
+                    />
+                  </label>
+                  <label className="form-field">
+                    <span>Estimated time</span>
+                    <input
+                      placeholder="35-45 min"
+                      type="text"
+                      value={partnerForm.estimatedTime}
+                      onChange={(event) =>
+                        setPartnerForm((current) => ({
+                          ...current,
+                          estimatedTime: event.target.value,
+                        }))
+                      }
+                    />
+                  </label>
+                  <label className="form-field">
+                    <span>Delivery fee label</span>
+                    <input
+                      placeholder="PHP 50 delivery"
+                      type="text"
+                      value={partnerForm.deliveryFeeLabel}
+                      onChange={(event) =>
+                        setPartnerForm((current) => ({
+                          ...current,
+                          deliveryFeeLabel: event.target.value,
+                        }))
+                      }
+                    />
+                  </label>
+                  <label className="form-field">
+                    <span>Latitude</span>
+                    <input
+                      step="0.000001"
+                      type="number"
+                      value={partnerForm.latitude}
+                      onChange={(event) =>
+                        setPartnerForm((current) => ({
+                          ...current,
+                          latitude: event.target.value,
+                        }))
+                      }
+                    />
+                  </label>
+                  <label className="form-field">
+                    <span>Longitude</span>
+                    <input
+                      step="0.000001"
+                      type="number"
+                      value={partnerForm.longitude}
+                      onChange={(event) =>
+                        setPartnerForm((current) => ({
+                          ...current,
+                          longitude: event.target.value,
+                        }))
+                      }
+                    />
+                  </label>
+                  <label className="form-field">
+                    <span>Image URL</span>
+                    <input
+                      placeholder="https://example.com/image.jpg"
+                      type="url"
+                      value={partnerForm.imageUrl}
+                      onChange={(event) =>
+                        setPartnerForm((current) => ({
+                          ...current,
+                          imageUrl: event.target.value,
+                        }))
+                      }
+                    />
+                  </label>
+                </div>
+                <label className="checkbox-field">
+                  <input
+                    checked={partnerForm.isOpen}
+                    type="checkbox"
+                    onChange={(event) =>
+                      setPartnerForm((current) => ({
+                        ...current,
+                        isOpen: event.target.checked,
+                      }))
+                    }
+                  />
+                  <span>Partner shop is open</span>
+                </label>
+                <label className="checkbox-field">
+                  <input
+                    checked={partnerForm.isActive}
+                    type="checkbox"
+                    onChange={(event) =>
+                      setPartnerForm((current) => ({
+                        ...current,
+                        isActive: event.target.checked,
+                      }))
+                    }
+                  />
+                  <span>Partner shop is active</span>
+                </label>
+                <button className="primary-action-button" disabled={isPartnerSaving} type="submit">
+                  {isPartnerSaving
+                    ? 'Saving...'
+                    : editingPartnerId
+                      ? 'Update partner shop'
+                      : 'Add partner shop'}
+                </button>
+              </form>
+
+              {businessPartners.length === 0 ? (
+                <p className="empty-state">No partner shops found yet.</p>
+              ) : (
+                <div className="entity-list">
+                  {businessPartners.map((partner) => (
+                    <article className="entity-card" key={partner.id}>
+                      <div className="entity-card-header">
+                        <div>
+                          <h4>{partner.name}</h4>
+                          <p className="entity-meta">
+                            {getServiceCategoryName(partner.category_id, serviceCategories)} -{' '}
+                            {getServiceSubcategoryName(partner.subcategory_id, serviceSubcategories)} -{' '}
+                            {partner.estimated_time || 'No time set'} -{' '}
+                            {partner.delivery_fee_label || 'No delivery fee label'}
+                          </p>
+                          <p className="entity-meta">
+                            Restaurant link: {getRestaurantName(partner.restaurant_id, restaurants)}
+                          </p>
+                          <span className={partner.is_active && partner.is_open ? 'status-pill active' : 'status-pill'}>
+                            {partner.is_active ? (partner.is_open ? 'Open' : 'Closed') : 'Inactive'}
+                          </span>
+                        </div>
+                        <div className="action-row">
+                          <button
+                            className="secondary-button"
+                            type="button"
+                            onClick={() => {
+                              setEditingPartnerId(partner.id);
+                              setPartnerForm(getPartnerForm(partner));
+                            }}>
+                            Edit
+                          </button>
+                        </div>
+                      </div>
+                    </article>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
       </section>
 
       <section className="panel">
@@ -1682,9 +2167,38 @@ function getRiderName(riderId: string | null, riders: AdminRider[]) {
   return riders.find((rider) => rider.id === riderId)?.full_name ?? 'Assigned rider';
 }
 
-function getRestaurantName(restaurantId: string, restaurants: AdminRestaurant[]) {
+function getRestaurantName(restaurantId: string | null, restaurants: AdminRestaurant[]) {
+  if (!restaurantId) {
+    return 'Unlinked';
+  }
+
   return (
     restaurants.find((restaurant) => restaurant.id === restaurantId)?.name ?? 'Unknown restaurant'
+  );
+}
+
+function getServiceCategoryName(
+  categoryId: string | null,
+  categories: AdminServiceCategory[]
+) {
+  if (!categoryId) {
+    return 'No category';
+  }
+
+  return categories.find((category) => category.id === categoryId)?.name ?? 'Unknown category';
+}
+
+function getServiceSubcategoryName(
+  subcategoryId: string | null,
+  subcategories: AdminServiceSubcategory[]
+) {
+  if (!subcategoryId) {
+    return 'No sub-category';
+  }
+
+  return (
+    subcategories.find((subcategory) => subcategory.id === subcategoryId)?.name ??
+    'Unknown sub-category'
   );
 }
 
@@ -1720,6 +2234,26 @@ function getMenuItemForm(item: AdminMenuItem): MenuItemFormState {
   };
 }
 
+function getPartnerForm(partner: AdminBusinessPartner): PartnerFormState {
+  return {
+    address: partner.address ?? '',
+    categoryId: partner.category_id ?? '',
+    deliveryFeeLabel: partner.delivery_fee_label ?? '',
+    description: partner.description ?? '',
+    estimatedTime: partner.estimated_time ?? '',
+    imageUrl: partner.image_url ?? '',
+    isActive: partner.is_active,
+    isOpen: partner.is_open,
+    latitude: partner.latitude === null ? '' : String(partner.latitude),
+    longitude: partner.longitude === null ? '' : String(partner.longitude),
+    name: partner.name,
+    phone: partner.phone ?? '',
+    rating: partner.rating === null ? '' : String(partner.rating),
+    restaurantId: partner.restaurant_id ?? '',
+    subcategoryId: partner.subcategory_id ?? '',
+  };
+}
+
 function getRestaurantInput(form: RestaurantFormState): RestaurantInput {
   return {
     address: requireText(form.address, 'Restaurant address'),
@@ -1746,6 +2280,26 @@ function getMenuItemInput(form: MenuItemFormState): MenuItemInput {
     name: requireText(form.name, 'Menu item name'),
     price: requireNonNegativeNumber(form.price, 'Menu item price'),
     restaurant_id: requireText(form.restaurantId, 'Restaurant'),
+  };
+}
+
+function getPartnerInput(form: PartnerFormState): BusinessPartnerInput {
+  return {
+    address: normalizeOptionalText(form.address),
+    category_id: requireText(form.categoryId, 'Marketplace category'),
+    delivery_fee_label: normalizeOptionalText(form.deliveryFeeLabel),
+    description: normalizeOptionalText(form.description),
+    estimated_time: normalizeOptionalText(form.estimatedTime),
+    image_url: normalizeOptionalUrl(form.imageUrl),
+    is_active: form.isActive,
+    is_open: form.isOpen,
+    latitude: normalizeOptionalNumber(form.latitude, 'Latitude'),
+    longitude: normalizeOptionalNumber(form.longitude, 'Longitude'),
+    name: requireText(form.name, 'Partner shop name'),
+    phone: normalizeOptionalText(form.phone),
+    rating: normalizeOptionalNumber(form.rating, 'Rating'),
+    restaurant_id: normalizeOptionalText(form.restaurantId),
+    subcategory_id: normalizeOptionalText(form.subcategoryId),
   };
 }
 
