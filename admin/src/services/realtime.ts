@@ -59,3 +59,47 @@ export function subscribeToAdminFoodOrders(
     void supabase.removeChannel(channel);
   };
 }
+
+export function subscribeToPartnerPreviewOrders(
+  partnerId: string,
+  onPartnerOrdersChange: () => void,
+  onFallbackNeeded?: RealtimeFallback
+) {
+  // Partner Preview uses admin access today, but the subscription is still scoped to the selected shop.
+  const channel = supabase
+    .channel(`partner-preview-orders-${partnerId}`)
+    .on(
+      'postgres_changes',
+      {
+        event: '*',
+        filter: `partner_id=eq.${partnerId}`,
+        schema: 'public',
+        table: 'partner_orders',
+      },
+      onPartnerOrdersChange
+    )
+    .on(
+      'postgres_changes',
+      {
+        event: '*',
+        filter: `partner_id=eq.${partnerId}`,
+        schema: 'public',
+        table: 'partner_order_notifications',
+      },
+      onPartnerOrdersChange
+    )
+    .on(
+      'postgres_changes',
+      { event: '*', schema: 'public', table: 'partner_order_items' },
+      onPartnerOrdersChange
+    )
+    .subscribe((status) => {
+      if (realtimeFailureStatuses.includes(status)) {
+        onFallbackNeeded?.();
+      }
+    });
+
+  return () => {
+    void supabase.removeChannel(channel);
+  };
+}

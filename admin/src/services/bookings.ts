@@ -755,6 +755,28 @@ export async function updatePartnerDeliveryRateProfile(
   return data;
 }
 
+export async function createPartnerDeliveryRateProfile(input: PartnerDeliveryRateProfileInput) {
+  const { data, error } = await supabase
+    .from('partner_delivery_rate_profiles')
+    .insert(input)
+    .select('*')
+    .maybeSingle();
+
+  if (error) {
+    throw error;
+  }
+
+  if (!data) {
+    throw new Error('Supabase did not return the created partner delivery rate profile.');
+  }
+
+  return data;
+}
+
+export async function deactivatePartnerDeliveryRateProfile(profileId: string) {
+  return updatePartnerDeliveryRateProfile(profileId, { is_active: false });
+}
+
 export async function createRestaurant(input: RestaurantInput) {
   const { data, error } = await supabase
     .from('restaurants')

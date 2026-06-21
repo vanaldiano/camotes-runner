@@ -8,7 +8,11 @@ import {
   subscribeToAdminAuthChanges,
   type AdminAuthState,
 } from './services/auth';
-import { subscribeToAdminBookings, subscribeToAdminFoodOrders } from './services/realtime';
+import {
+  subscribeToAdminBookings,
+  subscribeToAdminFoodOrders,
+  subscribeToPartnerPreviewOrders,
+} from './services/realtime';
 import {
   assignRiderToBooking,
   assignRiderToFoodOrder,
@@ -16,8 +20,10 @@ import {
   bookingStatuses,
   createBusinessPartner,
   createMenuItem,
+  createPartnerDeliveryRateProfile,
   createPartnerProduct,
   createRestaurant,
+  deactivatePartnerDeliveryRateProfile,
   deactivatePartnerProduct,
   deleteMenuItem,
   deleteRestaurant,
@@ -34,6 +40,7 @@ import {
   getPartnerOrderItems,
   getPartnerOrders,
   getPartnerOrdersByPartner,
+  getPartnerDeliveryRateProfiles,
   getPartnerProducts,
   getPartnerUsers,
   getRestaurants,
@@ -49,6 +56,7 @@ import {
   updateBookingStatus,
   updateFoodOrderStatus,
   updateMenuItem,
+  updatePartnerDeliveryRateProfile,
   updatePartnerOrderStatus,
   updatePartnerProduct,
   updateMenuItemAvailability,
@@ -67,6 +75,7 @@ import {
   type AdminPartnerOrderNotification,
   type AdminPartnerOrder,
   type AdminPartnerOrderItem,
+  type AdminPartnerDeliveryRateProfile,
   type AdminPartnerProduct,
   type AdminPartnerUser,
   type AdminRestaurant,
@@ -76,6 +85,7 @@ import {
   type BusinessPartnerInput,
   type MenuItemInput,
   type PartnerUserInput,
+  type PartnerDeliveryRateProfileInput,
   type PartnerProductInput,
   type RestaurantInput,
 } from './services/bookings';
@@ -110,11 +120,46 @@ const partnerOrderStatusLabels: Record<PartnerOrderStatus, string> = {
   picked_up: 'Ready for Pickup',
   preparing: 'Preparing',
 };
+const dismissedPartnerOrdersStorageKey = 'camotes-runner-dismissed-partner-order-popups';
 
 type StatusFilter = 'all' | BookingStatus;
 type PartnerOrderFilter = 'all' | PartnerOrderStatus;
 type LoadOptions = {
   showLoading?: boolean;
+};
+type PartnerLatestOrderMetrics = {
+  completedToday: number;
+  preparing: number;
+  pending: number;
+  totalToday: number;
+  unreadNotifications: number;
+};
+type DashboardMode = 'admin' | 'partner';
+type AdminSection =
+  | 'dashboard'
+  | 'ride-bookings'
+  | 'food-orders'
+  | 'partner-orders'
+  | 'marketplace'
+  | 'partners'
+  | 'partner-products'
+  | 'rate-profiles'
+  | 'riders'
+  | 'notifications'
+  | 'settings';
+type PartnerSection =
+  | 'my-shop'
+  | 'my-orders'
+  | 'my-products'
+  | 'my-notifications'
+  | 'business-profile'
+  | 'reports'
+  | 'settings';
+type DashboardNavItem = {
+  href: string;
+  label: string;
+  section: AdminSection | PartnerSection;
+  status?: string;
 };
 type RestaurantFormState = {
   address: string;
@@ -181,6 +226,20 @@ type PartnerProductFormState = {
   sortOrder: string;
   subcategoryId: string;
   unitLabel: string;
+};
+type RateProfileFormState = {
+  baseFee: string;
+  baseKm: string;
+  categoryId: string;
+  isActive: boolean;
+  isManualQuote: boolean;
+  minimumFee: string;
+  name: string;
+  partnerId: string;
+  perKmFee: string;
+  serviceFee: string;
+  serviceType: string;
+  subcategoryId: string;
 };
 
 const emptyRestaurantForm: RestaurantFormState = {
@@ -254,6 +313,45 @@ const emptyPartnerProductForm: PartnerProductFormState = {
   unitLabel: '',
 };
 
+const emptyRateProfileForm: RateProfileFormState = {
+  baseFee: '50',
+  baseKm: '2',
+  categoryId: '',
+  isActive: true,
+  isManualQuote: false,
+  minimumFee: '50',
+  name: '',
+  partnerId: '',
+  perKmFee: '8',
+  serviceFee: '0',
+  serviceType: 'custom',
+  subcategoryId: '',
+};
+
+const adminNavItems: DashboardNavItem[] = [
+  { href: '#dashboard', label: 'Dashboard', section: 'dashboard' },
+  { href: '#ride-bookings', label: 'Ride Bookings', section: 'ride-bookings' },
+  { href: '#food-orders', label: 'Food Orders', section: 'food-orders' },
+  { href: '#partner-orders', label: 'Partner Orders', section: 'partner-orders' },
+  { href: '#marketplace', label: 'Marketplace', section: 'marketplace' },
+  { href: '#partners', label: 'Partners', section: 'partners' },
+  { href: '#partner-products', label: 'Products / Menu', section: 'partner-products' },
+  { href: '#rate-profiles', label: 'Rate Profiles', section: 'rate-profiles', status: 'SQL' },
+  { href: '#riders', label: 'Riders', section: 'riders' },
+  { href: '#notifications', label: 'Notifications', section: 'notifications' },
+  { href: '#settings', label: 'Settings / System', section: 'settings' },
+];
+
+const partnerNavItems: DashboardNavItem[] = [
+  { href: '#partner-my-shop', label: 'My Shop', section: 'my-shop' },
+  { href: '#partner-my-orders', label: 'My Orders', section: 'my-orders' },
+  { href: '#partner-my-products', label: 'Products / Menu', section: 'my-products' },
+  { href: '#partner-my-notifications', label: 'Notifications', section: 'my-notifications' },
+  { href: '#partner-business-profile', label: 'Business Profile', section: 'business-profile' },
+  { href: '#partner-reports', label: 'Reports / Earnings', section: 'reports', status: 'Soon' },
+  { href: '#partner-settings', label: 'Settings', section: 'settings', status: 'Soon' },
+];
+
 export function App() {
   const [adminAuthState, setAdminAuthState] = useState<AdminAuthState>({
     isAdmin: false,
@@ -277,12 +375,18 @@ export function App() {
     AdminPartnerOrderNotification[]
   >([]);
   const [partnerProducts, setPartnerProducts] = useState<AdminPartnerProduct[]>([]);
+  const [rateProfiles, setRateProfiles] = useState<AdminPartnerDeliveryRateProfile[]>([]);
   const [previewPartnerNotifications, setPreviewPartnerNotifications] = useState<
     AdminPartnerOrderNotification[]
   >([]);
   const [previewPartnerProducts, setPreviewPartnerProducts] = useState<AdminPartnerProduct[]>([]);
   const [previewPartnerOrders, setPreviewPartnerOrders] = useState<AdminPartnerOrder[]>([]);
   const [previewPartnerOrderItems, setPreviewPartnerOrderItems] = useState<AdminPartnerOrderItem[]>([]);
+  const [latestOrderSeenByPartner, setLatestOrderSeenByPartner] = useState<Record<string, string>>({});
+  const [dismissedPartnerOrderIds, setDismissedPartnerOrderIds] = useState<string[]>(() =>
+    getDismissedPartnerOrderIds()
+  );
+  const [newOrderPopupOrderId, setNewOrderPopupOrderId] = useState('');
   const [unreadPartnerNotificationCount, setUnreadPartnerNotificationCount] = useState(0);
   const [riders, setRiders] = useState<AdminRider[]>([]);
   const [restaurantForm, setRestaurantForm] = useState<RestaurantFormState>(emptyRestaurantForm);
@@ -291,12 +395,15 @@ export function App() {
   const [partnerUserForm, setPartnerUserForm] = useState<PartnerUserFormState>(emptyPartnerUserForm);
   const [partnerProductForm, setPartnerProductForm] =
     useState<PartnerProductFormState>(emptyPartnerProductForm);
+  const [rateProfileForm, setRateProfileForm] =
+    useState<RateProfileFormState>(emptyRateProfileForm);
   const [selectedProductPartnerId, setSelectedProductPartnerId] = useState('');
   const [previewPartnerId, setPreviewPartnerId] = useState('');
   const [editingRestaurantId, setEditingRestaurantId] = useState('');
   const [editingMenuItemId, setEditingMenuItemId] = useState('');
   const [editingPartnerId, setEditingPartnerId] = useState('');
   const [editingPartnerProductId, setEditingPartnerProductId] = useState('');
+  const [editingRateProfileId, setEditingRateProfileId] = useState('');
   const [restaurantImageInputs, setRestaurantImageInputs] = useState<Record<string, string>>({});
   const [menuItemImageInputs, setMenuItemImageInputs] = useState<Record<string, string>>({});
   const [filter, setFilter] = useState<StatusFilter>('all');
@@ -313,6 +420,7 @@ export function App() {
   const [savingPartnerId, setSavingPartnerId] = useState('');
   const [savingPartnerUserId, setSavingPartnerUserId] = useState('');
   const [savingPartnerProductId, setSavingPartnerProductId] = useState('');
+  const [savingRateProfileId, setSavingRateProfileId] = useState('');
   const [markingPartnerNotificationId, setMarkingPartnerNotificationId] = useState('');
   const [savingRestaurantImageId, setSavingRestaurantImageId] = useState('');
   const [savingMenuItemImageId, setSavingMenuItemImageId] = useState('');
@@ -330,6 +438,9 @@ export function App() {
   const [adminEmail, setAdminEmail] = useState('');
   const [adminPassword, setAdminPassword] = useState('');
   const [adminAuthMessage, setAdminAuthMessage] = useState('');
+  const [dashboardMode, setDashboardMode] = useState<DashboardMode>('admin');
+  const [activeAdminSection, setActiveAdminSection] = useState<AdminSection>('dashboard');
+  const [activePartnerSection, setActivePartnerSection] = useState<PartnerSection>('my-shop');
 
   useEffect(() => {
     if (!hasSupabaseConfig) {
@@ -487,6 +598,7 @@ export function App() {
         partnerUserRows,
         notificationRows,
         unreadNotificationCount,
+        rateProfileRows,
       ] = await Promise.all([
         getServiceCategories(),
         getServiceSubcategories(),
@@ -494,6 +606,7 @@ export function App() {
         getPartnerUsers(),
         getPartnerOrderNotifications(),
         getUnreadPartnerNotificationCount(),
+        getPartnerDeliveryRateProfiles(),
       ]);
       setServiceCategories(categoryRows);
       setServiceSubcategories(subcategoryRows);
@@ -501,6 +614,7 @@ export function App() {
       setPartnerUsers(partnerUserRows);
       setPartnerOrderNotifications(notificationRows);
       setUnreadPartnerNotificationCount(unreadNotificationCount);
+      setRateProfiles(rateProfileRows);
       setPreviewPartnerId((currentPreviewPartnerId) => currentPreviewPartnerId || partnerRows[0]?.id || '');
       setSelectedProductPartnerId((currentPartnerId) => currentPartnerId || partnerRows[0]?.id || '');
     } catch (error) {
@@ -527,6 +641,15 @@ export function App() {
       setPartnerProducts(rows);
     } catch (error) {
       setMarketplaceErrorMessage(`Unable to load partner products. ${getErrorMessage(error)}`);
+    }
+  }, []);
+
+  const loadRateProfiles = useCallback(async () => {
+    try {
+      const rows = await getPartnerDeliveryRateProfiles();
+      setRateProfiles(rows);
+    } catch (error) {
+      setMarketplaceErrorMessage(`Unable to load delivery rate profiles. ${getErrorMessage(error)}`);
     }
   }, []);
 
@@ -611,6 +734,7 @@ export function App() {
         partnerUserRows,
         notificationRows,
         unreadNotificationCount,
+        rateProfileRows,
       ] = await Promise.all([
         getServiceCategories(),
         getServiceSubcategories(),
@@ -618,6 +742,7 @@ export function App() {
         getPartnerUsers(),
         getPartnerOrderNotifications(),
         getUnreadPartnerNotificationCount(),
+        getPartnerDeliveryRateProfiles(),
       ]);
       setServiceCategories(marketCategoryRows);
       setServiceSubcategories(marketSubcategoryRows);
@@ -625,6 +750,7 @@ export function App() {
       setPartnerUsers(partnerUserRows);
       setPartnerOrderNotifications(notificationRows);
       setUnreadPartnerNotificationCount(unreadNotificationCount);
+      setRateProfiles(rateProfileRows);
       setPreviewPartnerId((currentPreviewPartnerId) => currentPreviewPartnerId || partnerRows[0]?.id || '');
       setSelectedProductPartnerId((currentPartnerId) => currentPartnerId || partnerRows[0]?.id || '');
     } catch (error) {
@@ -1117,6 +1243,54 @@ export function App() {
     }
   }
 
+  async function handleRateProfileSave() {
+    setSavingRateProfileId(editingRateProfileId || 'new');
+    setMarketplaceMessage('');
+    setMarketplaceErrorMessage('');
+
+    try {
+      const input = getRateProfileInput(rateProfileForm);
+
+      if (editingRateProfileId) {
+        await updatePartnerDeliveryRateProfile(editingRateProfileId, input);
+        setMarketplaceMessage('Delivery rate profile updated.');
+      } else {
+        await createPartnerDeliveryRateProfile(input);
+        setMarketplaceMessage('Delivery rate profile created.');
+      }
+
+      setRateProfileForm(emptyRateProfileForm);
+      setEditingRateProfileId('');
+      await loadRateProfiles();
+    } catch (error) {
+      setMarketplaceErrorMessage(`Unable to save delivery rate profile. ${getErrorMessage(error)}`);
+    } finally {
+      setSavingRateProfileId('');
+    }
+  }
+
+  async function handleRateProfileDeactivate(profileId: string) {
+    setSavingRateProfileId(profileId);
+    setMarketplaceMessage('');
+    setMarketplaceErrorMessage('');
+
+    try {
+      await deactivatePartnerDeliveryRateProfile(profileId);
+      setMarketplaceMessage('Delivery rate profile deactivated.');
+
+      if (editingRateProfileId === profileId) {
+        setEditingRateProfileId('');
+        setRateProfileForm(emptyRateProfileForm);
+      }
+
+      await loadRateProfiles();
+    } catch (error) {
+      setMarketplaceErrorMessage(`Unable to deactivate delivery rate profile. ${getErrorMessage(error)}`);
+    } finally {
+      setSavingRateProfileId('');
+    }
+  }
+
   async function handleMarkPartnerNotificationRead(notificationId: string) {
     setMarkingPartnerNotificationId(notificationId);
     setMarketplaceMessage('');
@@ -1137,6 +1311,20 @@ export function App() {
     }
   }
 
+  function handleViewLatestPartnerOrder(orderId: string) {
+    setActivePartnerSection('my-orders');
+    dismissPartnerOrderPopup(orderId);
+  }
+
+  function dismissPartnerOrderPopup(orderId: string) {
+    setNewOrderPopupOrderId('');
+    setDismissedPartnerOrderIds((currentIds) => {
+      const nextIds = currentIds.includes(orderId) ? currentIds : [...currentIds, orderId];
+      saveDismissedPartnerOrderIds(nextIds);
+      return nextIds;
+    });
+  }
+
   async function handlePreviewPartnerChange(partnerId: string) {
     setPreviewPartnerId(partnerId);
 
@@ -1144,6 +1332,7 @@ export function App() {
       setPreviewPartnerNotifications([]);
       setPreviewPartnerOrders([]);
       setPreviewPartnerOrderItems([]);
+      setNewOrderPopupOrderId('');
       return;
     }
 
@@ -1175,6 +1364,83 @@ export function App() {
     loadPreviewPartnerOrders,
     loadPreviewPartnerProducts,
     previewPartnerId,
+  ]);
+
+  useEffect(() => {
+    if (!hasSupabaseConfig || !adminAuthState.isAdmin || !previewPartnerId) {
+      return;
+    }
+
+    function refreshSelectedPartnerPreview() {
+      void loadPreviewPartnerNotifications(previewPartnerId);
+      void loadPreviewPartnerOrders(previewPartnerId);
+      void loadPartnerOrders();
+    }
+
+    const unsubscribe = subscribeToPartnerPreviewOrders(
+      previewPartnerId,
+      refreshSelectedPartnerPreview,
+      () => {
+        setMarketplaceMessage(
+          'Partner preview realtime is temporarily unavailable. The dashboard will keep polling.'
+        );
+      }
+    );
+    const polling = setInterval(refreshSelectedPartnerPreview, 5000);
+
+    return () => {
+      unsubscribe();
+      clearInterval(polling);
+    };
+  }, [
+    adminAuthState.isAdmin,
+    hasSupabaseConfig,
+    loadPartnerOrders,
+    loadPreviewPartnerNotifications,
+    loadPreviewPartnerOrders,
+    previewPartnerId,
+  ]);
+
+  useEffect(() => {
+    if (!adminAuthState.isAdmin || !previewPartnerId) {
+      return;
+    }
+
+    const latestOrder = getLatestPartnerOrder(previewPartnerOrders);
+
+    if (!latestOrder) {
+      return;
+    }
+
+    const previouslySeenOrderId = latestOrderSeenByPartner[previewPartnerId];
+
+    if (!previouslySeenOrderId) {
+      setLatestOrderSeenByPartner((currentByPartner) => ({
+        ...currentByPartner,
+        [previewPartnerId]: latestOrder.id,
+      }));
+      return;
+    }
+
+    if (previouslySeenOrderId === latestOrder.id) {
+      return;
+    }
+
+    setLatestOrderSeenByPartner((currentByPartner) => ({
+      ...currentByPartner,
+      [previewPartnerId]: latestOrder.id,
+    }));
+
+    if (dashboardMode === 'partner' && !dismissedPartnerOrderIds.includes(latestOrder.id)) {
+      setNewOrderPopupOrderId(latestOrder.id);
+    }
+  }, [
+    adminAuthState.isAdmin,
+    dashboardMode,
+    dismissedPartnerOrderIds,
+    latestOrderSeenByPartner,
+    previewPartnerId,
+    previewPartnerOrders,
   ]);
 
   useEffect(() => {
@@ -1299,6 +1565,25 @@ export function App() {
   const previewUnreadNotificationCount = previewPartnerNotifications.filter(
     (notification) => notification.status === 'unread'
   ).length;
+  const latestPreviewPartnerOrder = getLatestPartnerOrder(previewPartnerOrders);
+  const newOrderPopupOrder =
+    previewPartnerOrders.find((order) => order.id === newOrderPopupOrderId) ?? null;
+  const latestPreviewPartnerOrderNotification = latestPreviewPartnerOrder
+    ? getPartnerOrderNotification(latestPreviewPartnerOrder.id, previewPartnerNotifications)
+    : null;
+  const newOrderPopupNotification = newOrderPopupOrder
+    ? getPartnerOrderNotification(newOrderPopupOrder.id, previewPartnerNotifications)
+    : null;
+  const latestPreviewPartnerOrderItems = latestPreviewPartnerOrder
+    ? getPartnerOrderItemsForOrder(latestPreviewPartnerOrder.id, previewPartnerOrderItems)
+    : [];
+  const newOrderPopupItems = newOrderPopupOrder
+    ? getPartnerOrderItemsForOrder(newOrderPopupOrder.id, previewPartnerOrderItems)
+    : [];
+  const previewPartnerMetrics = getPartnerLatestOrderMetrics(
+    previewPartnerOrders,
+    previewUnreadNotificationCount
+  );
   const isRestaurantSaving = savingRestaurantId === (editingRestaurantId || 'new');
   const isMenuItemSaving = savingMenuItemId === (editingMenuItemId || 'new');
   const isPartnerSaving = savingPartnerId === (editingPartnerId || 'new');
@@ -1336,43 +1621,76 @@ export function App() {
   }
 
   return (
-    <main className="app-shell">
-      <section className="hero">
+    <main className={`dashboard-shell ${dashboardMode}-mode`}>
+      <DashboardSidebar
+        activeAdminSection={activeAdminSection}
+        activeMode={dashboardMode}
+        activePartnerSection={activePartnerSection}
+        adminItems={adminNavItems}
+        partnerItems={partnerNavItems}
+        unreadCount={unreadPartnerNotificationCount}
+        onAdminSectionChange={setActiveAdminSection}
+        onModeChange={setDashboardMode}
+        onPartnerSectionChange={setActivePartnerSection}
+      />
+
+      <div className="dashboard-main">
+        <DashboardTopBar
+          activeMode={dashboardMode}
+          isConnected={hasSupabaseConfig}
+          profileName={adminAuthState.profile?.full_name ?? adminAuthState.user?.email ?? 'Admin'}
+          onRefresh={refreshDashboard}
+          onSignOut={handleAdminSignOut}
+        />
+
+        {dashboardMode === 'partner' && newOrderPopupOrder ? (
+          <NewPartnerOrderPopup
+            isMarkingRead={Boolean(
+              newOrderPopupNotification && markingPartnerNotificationId === newOrderPopupNotification.id
+            )}
+            notification={newOrderPopupNotification}
+            order={newOrderPopupOrder}
+            orderItems={newOrderPopupItems}
+            onDismiss={() => dismissPartnerOrderPopup(newOrderPopupOrder.id)}
+            onMarkRead={(notificationId) => void handleMarkPartnerNotificationRead(notificationId)}
+            onViewOrder={() => handleViewLatestPartnerOrder(newOrderPopupOrder.id)}
+          />
+        ) : null}
+
+      {dashboardMode === 'admin' && activeAdminSection === 'dashboard' ? (
+        <>
+      <section className="hero admin-workspace-section" id="dashboard">
         <div>
           <p className="eyebrow">Camotes Runner Admin</p>
           <h1>Operations Dashboard</h1>
           <p className="hero-copy">
-            Monitor bookings, update statuses, and track completed income for the island service.
+            Monitor rides, food orders, partner deliveries, marketplace data, and rider assignment.
           </p>
         </div>
-
-        <button className="refresh-button" type="button" onClick={refreshDashboard}>
-          Refresh
-        </button>
       </section>
 
-      <section className="admin-session-bar">
-        <span>
-          Signed in as {adminAuthState.profile?.full_name ?? adminAuthState.user?.email ?? 'Admin'}
-        </span>
-        <button type="button" onClick={handleAdminSignOut}>
-          Sign Out
-        </button>
-      </section>
-
-      <section className="stats-grid">
+      <section className="stats-grid admin-workspace-section" id="riders">
         <StatCard label="Total Bookings" value={String(bookings.length)} />
         <StatCard label="Completed Income" value={formatCurrency(completedIncome)} />
         <StatCard label="Total Food Orders" value={String(foodOrders.length)} />
         <StatCard label="Food Income" value={formatCurrency(deliveredFoodIncome)} />
         <StatCard label="Supabase" value={hasSupabaseConfig ? 'Connected' : 'Missing Env'} />
       </section>
+        </>
+      ) : null}
 
-      <section className="panel">
+      {dashboardMode === 'partner' ? <PartnerPreviewNotice activeMode={dashboardMode} /> : null}
+
+      {(
+        dashboardMode === 'partner' ||
+        (dashboardMode === 'admin' &&
+          ['marketplace', 'partners', 'partner-products', 'notifications'].includes(activeAdminSection))
+      ) ? (
+      <section className="panel marketplace-panel" id="marketplace">
         <div className="panel-header">
           <div>
-            <p className="eyebrow">Marketplace</p>
-            <h2>Categories and partner shops</h2>
+            <p className="eyebrow">{dashboardMode === 'partner' ? 'Partner Dashboard' : 'Marketplace'}</p>
+            <h2>{dashboardMode === 'partner' ? 'Selected partner preview' : 'Categories and partner shops'}</h2>
           </div>
         </div>
 
@@ -1383,12 +1701,14 @@ export function App() {
           <p className="empty-state">Loading marketplace data...</p>
         ) : (
           <div className="food-management">
-            <div className="section-nav-row" aria-label="Marketplace admin sections">
+            {dashboardMode === 'admin' && activeAdminSection === 'marketplace' ? (
+              <>
+            <div className="section-nav-row admin-workspace-section" aria-label="Marketplace admin sections">
               <span>Admin Marketplace</span>
               <span>Partners</span>
               <span>Partner Dashboard Preview / My Shop</span>
             </div>
-            <div className="food-management-section">
+            <div className="food-management-section admin-workspace-section">
               <div className="section-title-row">
                 <h3>Service categories</h3>
                 <span className="count-pill">{serviceCategories.length} categories</span>
@@ -1416,7 +1736,7 @@ export function App() {
               )}
             </div>
 
-            <div className="food-management-section">
+            <div className="food-management-section admin-workspace-section">
               <div className="section-title-row">
                 <h3>Sub-categories</h3>
                 <span className="count-pill">{serviceSubcategories.length} sub-categories</span>
@@ -1444,8 +1764,12 @@ export function App() {
                 </div>
               )}
             </div>
+              </>
+            ) : null}
 
-            <div className="food-management-section">
+            {dashboardMode === 'admin' && activeAdminSection === 'partners' ? (
+              <>
+            <div className="food-management-section admin-workspace-section" id="partners">
               <div className="section-title-row">
                 <h3>{editingPartnerId ? 'Edit partner shop' : 'Add partner shop'}</h3>
                 {editingPartnerId ? (
@@ -1806,7 +2130,7 @@ export function App() {
               )}
             </div>
 
-            <div className="food-management-section">
+            <div className="food-management-section admin-workspace-section">
               <div className="section-title-row">
                 <h3>Partner user assignment foundation</h3>
                 <span className="count-pill">{partnerUsers.length} users</span>
@@ -1930,8 +2254,11 @@ export function App() {
                 </div>
               )}
             </div>
+              </>
+            ) : null}
 
-            <div className="food-management-section">
+            {dashboardMode === 'admin' && activeAdminSection === 'partner-products' ? (
+            <div className="food-management-section admin-workspace-section" id="partner-products">
               <div className="section-title-row">
                 <h3>Product/Menu Management</h3>
                 <label className="filter-control compact-filter">
@@ -2220,8 +2547,10 @@ export function App() {
                 </div>
               )}
             </div>
+            ) : null}
 
-            <div className="food-management-section">
+            {dashboardMode === 'admin' && activeAdminSection === 'notifications' ? (
+            <div className="food-management-section admin-workspace-section" id="notifications">
               <div className="section-title-row">
                 <h3>Partner Orders / Notifications</h3>
                 <span className="count-pill">{unreadPartnerNotificationCount} unread</span>
@@ -2274,10 +2603,17 @@ export function App() {
                 </div>
               )}
             </div>
+            ) : null}
 
-            <div className="food-management-section">
+            {dashboardMode === 'partner' ? (
+            <div className="food-management-section partner-workspace-section" id="partner-my-shop">
               <div className="section-title-row">
-                <h3>Partner Dashboard Preview / My Shop</h3>
+                <div>
+                  <h3>Partner Dashboard Preview / My Shop</h3>
+                  <p className="entity-meta">
+                    This simulates what a partner will see after partner login is enabled.
+                  </p>
+                </div>
                 <label className="filter-control compact-filter">
                   <span>Preview partner</span>
                   <select
@@ -2295,6 +2631,8 @@ export function App() {
 
               {previewPartner ? (
                 <article className="partner-preview-card">
+                  {activePartnerSection === 'my-shop' ? (
+                    <>
                   <div className="partner-preview-header">
                     <div>
                       <p className="eyebrow">My Shop</p>
@@ -2315,7 +2653,33 @@ export function App() {
                     </div>
                     <span className="count-pill">{previewPartnerNotifications.length} latest</span>
                   </div>
-                  <div className="partner-preview-grid">
+                  <div className="partner-summary-grid">
+                    <PartnerSummaryCard label="Pending orders" value={previewPartnerMetrics.pending} />
+                    <PartnerSummaryCard label="Preparing orders" value={previewPartnerMetrics.preparing} />
+                    <PartnerSummaryCard label="Completed today" value={previewPartnerMetrics.completedToday} />
+                    <PartnerSummaryCard label="Orders today" value={previewPartnerMetrics.totalToday} />
+                    <PartnerSummaryCard
+                      label="Unread notifications"
+                      value={previewPartnerMetrics.unreadNotifications}
+                    />
+                  </div>
+                  <LatestPartnerOrderCard
+                    isUpdating={Boolean(
+                      latestPreviewPartnerOrder && updatingPartnerOrderId === latestPreviewPartnerOrder.id
+                    )}
+                    notification={latestPreviewPartnerOrderNotification}
+                    order={latestPreviewPartnerOrder}
+                    orderItems={latestPreviewPartnerOrderItems}
+                    onAccept={(orderId) => void handlePartnerOrderStatusChange(orderId, 'accepted')}
+                    onMarkPreparing={(orderId) =>
+                      void handlePartnerOrderStatusChange(orderId, 'preparing')
+                    }
+                    onViewOrder={handleViewLatestPartnerOrder}
+                  />
+                    </>
+                  ) : null}
+                  {activePartnerSection === 'business-profile' ? (
+                  <div className="partner-preview-grid" id="partner-business-profile">
                     <PreviewField label="Description" value={previewPartner.description} />
                     <PreviewField label="Address" value={previewPartner.address} />
                     <PreviewField label="Phone" value={previewPartner.phone} />
@@ -2325,7 +2689,9 @@ export function App() {
                     <PreviewField label="Active status" value={previewPartner.is_active ? 'Active' : 'Inactive'} />
                     <PreviewField label="Marketplace status" value={previewPartner.status} />
                   </div>
-                  <div className="preview-products-section">
+                  ) : null}
+                  {activePartnerSection === 'my-products' ? (
+                  <div className="preview-products-section" id="partner-my-products">
                     <div className="section-title-row">
                       <div>
                         <h3>Products / Menu</h3>
@@ -2372,7 +2738,9 @@ export function App() {
                       </div>
                     )}
                   </div>
-                  <div className="preview-products-section">
+                  ) : null}
+                  {activePartnerSection === 'my-orders' ? (
+                  <div className="preview-products-section" id="partner-my-orders">
                     <div className="section-title-row">
                       <div>
                         <h3>Partner Orders</h3>
@@ -2448,7 +2816,9 @@ export function App() {
                       </div>
                     )}
                   </div>
-                  <div className="preview-notification-list">
+                  ) : null}
+                  {activePartnerSection === 'my-notifications' ? (
+                  <div className="preview-notification-list" id="partner-my-notifications">
                     {previewPartnerNotifications.length === 0 ? (
                       <p className="empty-state">No new partner orders yet.</p>
                     ) : (
@@ -2487,8 +2857,21 @@ export function App() {
                       ))
                     )}
                   </div>
-                  <p className="empty-state">Product/menu management coming in Phase 8D.</p>
-                  <p className="empty-state">Order management coming in Phase 8D/8E.</p>
+                  ) : null}
+                  {activePartnerSection === 'reports' || activePartnerSection === 'settings' ? (
+                  <div className="partner-placeholder-grid">
+                    {activePartnerSection === 'reports' ? (
+                    <p className="empty-state" id="partner-reports">
+                      Reports / earnings will connect to Phase 9 payment and commission data.
+                    </p>
+                    ) : null}
+                    {activePartnerSection === 'settings' ? (
+                    <p className="empty-state" id="partner-settings">
+                      Partner settings stay admin-controlled until partner login is enabled.
+                    </p>
+                    ) : null}
+                  </div>
+                  ) : null}
                   <p className="entity-meta">
                     Preview users: {previewPartnerUsers.length || 'No linked partner users yet.'}
                   </p>
@@ -2497,11 +2880,361 @@ export function App() {
                 <p className="empty-state">Choose a partner shop to preview the partner dashboard.</p>
               )}
             </div>
+            ) : null}
           </div>
         )}
       </section>
+      ) : null}
 
-      <section className="panel">
+      {dashboardMode === 'admin' && activeAdminSection === 'riders' ? (
+      <section className="panel admin-workspace-section" id="riders">
+        <div className="panel-header">
+          <div>
+            <p className="eyebrow">Riders</p>
+            <h2>Runner assignment pool</h2>
+          </div>
+        </div>
+        {riders.length === 0 ? (
+          <p className="empty-state">No riders found yet.</p>
+        ) : (
+          <div className="entity-list compact-entity-grid">
+            {riders.map((rider) => (
+              <article className="entity-card" key={rider.id}>
+                <div className="entity-card-header">
+                  <div>
+                    <h4>{rider.full_name}</h4>
+                    <p className="entity-meta">
+                      {rider.phone || 'No phone'} - {rider.motorcycle_model || 'Motorcycle not set'} -{' '}
+                      {rider.plate_number || 'No plate'}
+                    </p>
+                    <span className={rider.is_available ? 'status-pill active' : 'status-pill'}>
+                      {rider.is_available ? 'Available' : 'Unavailable'}
+                    </span>
+                  </div>
+                </div>
+              </article>
+            ))}
+          </div>
+        )}
+      </section>
+      ) : null}
+
+      {dashboardMode === 'admin' && activeAdminSection === 'rate-profiles' ? (
+      <section className="panel admin-workspace-section" id="rate-profiles">
+        <div className="panel-header">
+          <div>
+            <p className="eyebrow">Rate Profiles</p>
+            <h2>Partner delivery fee rates</h2>
+            <p className="entity-meta">
+              Partner-specific rates win first, then sub-category, then category, then fallback defaults.
+            </p>
+          </div>
+        </div>
+        {marketplaceErrorMessage ? <p className="error-message">{marketplaceErrorMessage}</p> : null}
+        {marketplaceMessage ? <p className="success-message">{marketplaceMessage}</p> : null}
+
+        <form
+          className="management-form"
+          onSubmit={(event) => {
+            event.preventDefault();
+            void handleRateProfileSave();
+          }}>
+          <div className="section-title-row">
+            <h3>{editingRateProfileId ? 'Edit rate profile' : 'Create rate profile'}</h3>
+            {editingRateProfileId ? (
+              <button
+                className="secondary-button"
+                type="button"
+                onClick={() => {
+                  setEditingRateProfileId('');
+                  setRateProfileForm(emptyRateProfileForm);
+                }}>
+                Cancel edit
+              </button>
+            ) : null}
+          </div>
+          <div className="form-grid">
+            <label className="form-field">
+              <span>Name</span>
+              <input
+                required
+                type="text"
+                value={rateProfileForm.name}
+                onChange={(event) =>
+                  setRateProfileForm((current) => ({ ...current, name: event.target.value }))
+                }
+              />
+            </label>
+            <label className="form-field">
+              <span>Service type</span>
+              <input
+                required
+                type="text"
+                value={rateProfileForm.serviceType}
+                onChange={(event) =>
+                  setRateProfileForm((current) => ({ ...current, serviceType: event.target.value }))
+                }
+              />
+            </label>
+            <label className="form-field">
+              <span>Category</span>
+              <select
+                value={rateProfileForm.categoryId}
+                onChange={(event) =>
+                  setRateProfileForm((current) => ({
+                    ...current,
+                    categoryId: event.target.value,
+                    subcategoryId: '',
+                  }))
+                }>
+                <option value="">No category scope</option>
+                {serviceCategories.map((category) => (
+                  <option key={category.id} value={category.id}>
+                    {category.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="form-field">
+              <span>Sub-category</span>
+              <select
+                value={rateProfileForm.subcategoryId}
+                onChange={(event) =>
+                  setRateProfileForm((current) => ({
+                    ...current,
+                    subcategoryId: event.target.value,
+                  }))
+                }>
+                <option value="">No sub-category scope</option>
+                {serviceSubcategories
+                  .filter(
+                    (subcategory) =>
+                      !rateProfileForm.categoryId ||
+                      subcategory.category_id === rateProfileForm.categoryId
+                  )
+                  .map((subcategory) => (
+                    <option key={subcategory.id} value={subcategory.id}>
+                      {subcategory.name}
+                    </option>
+                  ))}
+              </select>
+            </label>
+            <label className="form-field">
+              <span>Partner override</span>
+              <select
+                value={rateProfileForm.partnerId}
+                onChange={(event) =>
+                  setRateProfileForm((current) => ({ ...current, partnerId: event.target.value }))
+                }>
+                <option value="">No partner override</option>
+                {businessPartners.map((partner) => (
+                  <option key={partner.id} value={partner.id}>
+                    {partner.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="form-field">
+              <span>Minimum fee</span>
+              <input
+                min="0"
+                required
+                step="1"
+                type="number"
+                value={rateProfileForm.minimumFee}
+                onChange={(event) =>
+                  setRateProfileForm((current) => ({ ...current, minimumFee: event.target.value }))
+                }
+              />
+            </label>
+            <label className="form-field">
+              <span>Base fee</span>
+              <input
+                min="0"
+                required
+                step="1"
+                type="number"
+                value={rateProfileForm.baseFee}
+                onChange={(event) =>
+                  setRateProfileForm((current) => ({ ...current, baseFee: event.target.value }))
+                }
+              />
+            </label>
+            <label className="form-field">
+              <span>Base km</span>
+              <input
+                min="0"
+                required
+                step="0.1"
+                type="number"
+                value={rateProfileForm.baseKm}
+                onChange={(event) =>
+                  setRateProfileForm((current) => ({ ...current, baseKm: event.target.value }))
+                }
+              />
+            </label>
+            <label className="form-field">
+              <span>Per km fee</span>
+              <input
+                min="0"
+                required
+                step="1"
+                type="number"
+                value={rateProfileForm.perKmFee}
+                onChange={(event) =>
+                  setRateProfileForm((current) => ({ ...current, perKmFee: event.target.value }))
+                }
+              />
+            </label>
+            <label className="form-field">
+              <span>Service fee</span>
+              <input
+                min="0"
+                required
+                step="1"
+                type="number"
+                value={rateProfileForm.serviceFee}
+                onChange={(event) =>
+                  setRateProfileForm((current) => ({ ...current, serviceFee: event.target.value }))
+                }
+              />
+            </label>
+          </div>
+          <label className="checkbox-field">
+            <input
+              checked={rateProfileForm.isManualQuote}
+              type="checkbox"
+              onChange={(event) =>
+                setRateProfileForm((current) => ({
+                  ...current,
+                  isManualQuote: event.target.checked,
+                }))
+              }
+            />
+            <span>Manual quote</span>
+          </label>
+          <label className="checkbox-field">
+            <input
+              checked={rateProfileForm.isActive}
+              type="checkbox"
+              onChange={(event) =>
+                setRateProfileForm((current) => ({ ...current, isActive: event.target.checked }))
+              }
+            />
+            <span>Active</span>
+          </label>
+          <button className="primary-action-button" disabled={Boolean(savingRateProfileId)} type="submit">
+            {savingRateProfileId
+              ? 'Saving...'
+              : editingRateProfileId
+                ? 'Update rate profile'
+                : 'Create rate profile'}
+          </button>
+        </form>
+
+        {rateProfiles.length === 0 ? (
+          <p className="empty-state">No delivery rate profiles found. Run the Phase 8E.5 SQL migration.</p>
+        ) : (
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Name</th>
+                  <th>Service</th>
+                  <th>Scope</th>
+                  <th>Minimum</th>
+                  <th>Base</th>
+                  <th>Base km</th>
+                  <th>Per km</th>
+                  <th>Service fee</th>
+                  <th>Flags</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rateProfiles.map((profile) => (
+                  <tr key={profile.id}>
+                    <td>{profile.name}</td>
+                    <td>{profile.service_type}</td>
+                    <td>
+                      <div className="address-cell">
+                        <span>{getRateProfileScopeLabel(profile, businessPartners)}</span>
+                        <small>
+                          {getServiceCategoryName(profile.category_id, serviceCategories)} /{' '}
+                          {getServiceSubcategoryName(profile.subcategory_id, serviceSubcategories)}
+                        </small>
+                      </div>
+                    </td>
+                    <td>{formatCurrency(Number(profile.minimum_fee))}</td>
+                    <td>{formatCurrency(Number(profile.base_fee))}</td>
+                    <td>{Number(profile.base_km).toFixed(1)}</td>
+                    <td>{formatCurrency(Number(profile.per_km_fee))}</td>
+                    <td>{formatCurrency(Number(profile.service_fee))}</td>
+                    <td>
+                      <div className="status-row">
+                        <span className={profile.is_active ? 'status-pill active' : 'status-pill'}>
+                          {profile.is_active ? 'Active' : 'Inactive'}
+                        </span>
+                        {profile.is_manual_quote ? <span className="status-pill">Manual quote</span> : null}
+                      </div>
+                    </td>
+                    <td>
+                      <div className="action-row">
+                        <button
+                          className="secondary-button"
+                          type="button"
+                          onClick={() => {
+                            setEditingRateProfileId(profile.id);
+                            setRateProfileForm(getRateProfileForm(profile));
+                          }}>
+                          Edit
+                        </button>
+                        <button
+                          className="secondary-button"
+                          disabled={!profile.is_active || savingRateProfileId === profile.id}
+                          type="button"
+                          onClick={() => void handleRateProfileDeactivate(profile.id)}>
+                          Deactivate
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
+      ) : null}
+
+      {dashboardMode === 'admin' && activeAdminSection === 'settings' ? (
+      <section className="panel admin-workspace-section" id="settings">
+        <div className="panel-header">
+          <div>
+            <p className="eyebrow">Settings / System</p>
+            <h2>Operations readiness</h2>
+          </div>
+        </div>
+        <div className="entity-list compact-entity-grid">
+          <article className="entity-card">
+            <h4>Supabase connection</h4>
+            <p className="entity-meta">
+              Environment status: {hasSupabaseConfig ? 'Connected' : 'Missing Supabase environment variables'}.
+            </p>
+          </article>
+          <article className="entity-card">
+            <h4>Phase 9 preparation</h4>
+            <p className="entity-meta">
+              Payment, commission, settlement, and partner earnings controls can attach here after the
+              dashboard structure settles.
+            </p>
+          </article>
+        </div>
+      </section>
+      ) : null}
+
+      {dashboardMode === 'admin' && activeAdminSection === 'ride-bookings' ? (
+      <section className="panel admin-workspace-section" id="ride-bookings">
         <div className="panel-header">
           <div>
             <p className="eyebrow">Bookings</p>
@@ -2613,8 +3346,10 @@ export function App() {
           </div>
         )}
       </section>
+      ) : null}
 
-      <section className="panel">
+      {dashboardMode === 'admin' && activeAdminSection === 'food-orders' ? (
+      <section className="panel admin-workspace-section" id="food-orders">
         <div className="panel-header">
           <div>
             <p className="eyebrow">Food Orders</p>
@@ -2713,7 +3448,10 @@ export function App() {
         )}
       </section>
 
-      <section className="panel">
+      ) : null}
+
+      {dashboardMode === 'admin' && activeAdminSection === 'partner-orders' ? (
+      <section className="panel admin-workspace-section" id="partner-orders">
         <div className="panel-header">
           <div>
             <p className="eyebrow">Partner Orders</p>
@@ -2830,7 +3568,10 @@ export function App() {
         )}
       </section>
 
-      <section className="panel">
+      ) : null}
+
+      {dashboardMode === 'admin' && activeAdminSection === 'partner-products' ? (
+      <section className="panel admin-workspace-section" id="food-management">
         <div className="panel-header">
           <div>
             <p className="eyebrow">Food Management</p>
@@ -3293,6 +4034,8 @@ export function App() {
           </div>
         )}
       </section>
+      ) : null}
+      </div>
     </main>
   );
 }
@@ -3374,6 +4117,332 @@ function AdminLoginShell({
         {adminAuthMessage ? <p className="admin-login-message">{adminAuthMessage}</p> : null}
       </section>
     </main>
+  );
+}
+
+type DashboardSidebarProps = {
+  activeAdminSection: AdminSection;
+  activeMode: DashboardMode;
+  activePartnerSection: PartnerSection;
+  adminItems: DashboardNavItem[];
+  partnerItems: DashboardNavItem[];
+  unreadCount: number;
+  onAdminSectionChange: (section: AdminSection) => void;
+  onModeChange: (mode: DashboardMode) => void;
+  onPartnerSectionChange: (section: PartnerSection) => void;
+};
+
+function DashboardSidebar({
+  activeAdminSection,
+  activeMode,
+  activePartnerSection,
+  adminItems,
+  partnerItems,
+  unreadCount,
+  onAdminSectionChange,
+  onModeChange,
+  onPartnerSectionChange,
+}: DashboardSidebarProps) {
+  const visibleItems = activeMode === 'admin' ? adminItems : partnerItems;
+
+  return (
+    <aside className="dashboard-sidebar">
+      <div className="sidebar-brand">
+        <span className="sidebar-logo">CR</span>
+        <div>
+          <strong>Camotes Runner</strong>
+          <small>Web Dashboard</small>
+        </div>
+      </div>
+
+      <div className="workspace-switch" aria-label="Dashboard workspace">
+        <button
+          className={activeMode === 'admin' ? 'active' : ''}
+          type="button"
+          onClick={() => onModeChange('admin')}>
+          Admin
+        </button>
+        <button
+          className={activeMode === 'partner' ? 'active' : ''}
+          type="button"
+          onClick={() => onModeChange('partner')}>
+          Partner
+        </button>
+      </div>
+
+      <nav className="sidebar-nav" aria-label={`${activeMode} dashboard navigation`}>
+        {visibleItems.map((item) => (
+          <button
+            className={
+              isDashboardNavItemActive(item, activeMode, activeAdminSection, activePartnerSection)
+                ? 'active'
+                : ''
+            }
+            key={item.href}
+            type="button"
+            onClick={() => {
+              if (activeMode === 'admin') {
+                onAdminSectionChange(item.section as AdminSection);
+              } else {
+                onPartnerSectionChange(item.section as PartnerSection);
+              }
+            }}>
+            <span>{item.label}</span>
+            {item.status ? <small>{item.status}</small> : null}
+            {item.label === 'Notifications' && unreadCount > 0 ? (
+              <small>{unreadCount}</small>
+            ) : null}
+          </button>
+        ))}
+      </nav>
+    </aside>
+  );
+}
+
+function isDashboardNavItemActive(
+  item: DashboardNavItem,
+  activeMode: DashboardMode,
+  activeAdminSection: AdminSection,
+  activePartnerSection: PartnerSection
+) {
+  return activeMode === 'admin'
+    ? item.section === activeAdminSection
+    : item.section === activePartnerSection;
+}
+
+type DashboardTopBarProps = {
+  activeMode: DashboardMode;
+  isConnected: boolean;
+  profileName: string;
+  onRefresh: () => void;
+  onSignOut: () => void;
+};
+
+function DashboardTopBar({
+  activeMode,
+  isConnected,
+  profileName,
+  onRefresh,
+  onSignOut,
+}: DashboardTopBarProps) {
+  return (
+    <header className="dashboard-topbar">
+      <div>
+        <p className="eyebrow">{activeMode === 'admin' ? 'Admin Workspace' : 'Partner Preview Workspace'}</p>
+        <h1>{activeMode === 'admin' ? 'Operations Control' : 'Partner Shop Preview'}</h1>
+      </div>
+      <div className="topbar-actions">
+        <span className={isConnected ? 'status-pill active' : 'status-pill'}>
+          {isConnected ? 'Supabase connected' : 'Supabase missing'}
+        </span>
+        <span className="session-chip">{profileName}</span>
+        <button className="refresh-button" type="button" onClick={onRefresh}>
+          Refresh
+        </button>
+        <button className="secondary-button" type="button" onClick={onSignOut}>
+          Sign Out
+        </button>
+      </div>
+    </header>
+  );
+}
+
+function PartnerPreviewNotice({ activeMode }: { activeMode: DashboardMode }) {
+  if (activeMode !== 'partner') {
+    return null;
+  }
+
+  return (
+    <section className="partner-preview-notice">
+      <div>
+        <p className="eyebrow">Partner Dashboard Preview</p>
+        <h2>Simulated partner workspace</h2>
+        <p>
+          This view uses the selected partner shop below. Real partner login and stricter partner-only
+          permissions can be enabled later without separating this deployment yet.
+        </p>
+      </div>
+    </section>
+  );
+}
+
+function PartnerSummaryCard({ label, value }: { label: string; value: number }) {
+  return (
+    <article className="partner-summary-card">
+      <span>{label}</span>
+      <strong>{value}</strong>
+    </article>
+  );
+}
+
+type LatestPartnerOrderCardProps = {
+  isUpdating?: boolean;
+  notification?: AdminPartnerOrderNotification | null;
+  order: AdminPartnerOrder | null;
+  orderItems: AdminPartnerOrderItem[];
+  onAccept: (orderId: string) => void;
+  onMarkPreparing: (orderId: string) => void;
+  onViewOrder: (orderId: string) => void;
+};
+
+function LatestPartnerOrderCard({
+  isUpdating = false,
+  notification,
+  order,
+  orderItems,
+  onAccept,
+  onMarkPreparing,
+  onViewOrder,
+}: LatestPartnerOrderCardProps) {
+  if (!order) {
+    return (
+      <article className="latest-order-card">
+        <div>
+          <p className="eyebrow">Latest Order</p>
+          <h3>No partner orders yet</h3>
+          <p className="entity-meta">New customer orders for this selected partner will appear here.</p>
+        </div>
+      </article>
+    );
+  }
+
+  return (
+    <article className="latest-order-card">
+      <div className="latest-order-header">
+        <div>
+          <p className="eyebrow">Latest Order</p>
+          <h3>Order {order.id.slice(0, 8)}</h3>
+          <p className="entity-meta">Created {formatDate(order.created_at)}</p>
+        </div>
+        <span className="status-pill active">{partnerOrderStatusLabels[order.status]}</span>
+      </div>
+
+      <div className="latest-order-grid">
+        <PreviewField label="Customer" value={order.customer_name || 'Customer'} />
+        <PreviewField label="Phone" value={order.customer_phone || 'No phone'} />
+        <PreviewField label="Payment" value={toTitleCase(order.payment_method || 'cash')} />
+        <PreviewField label="Delivery address" value={order.delivery_address || 'No address'} />
+      </div>
+
+      <div className="latest-order-detail">
+        <div>
+          <span>Items</span>
+          <OrderItemsSummary items={orderItems} />
+        </div>
+        <div className="latest-order-totals">
+          <span>Subtotal {formatCurrency(Number(order.subtotal ?? 0))}</span>
+          <span>Delivery {formatCurrency(Number(order.delivery_fee ?? 0))}</span>
+          <strong>Total {formatCurrency(Number(order.total_amount ?? 0))}</strong>
+        </div>
+      </div>
+
+      {notification ? (
+        <p className="notification-message">
+          {notification.title}: {notification.message}
+        </p>
+      ) : null}
+
+      <div className="action-row form-action-row">
+        <button className="secondary-button" type="button" onClick={() => onViewOrder(order.id)}>
+          View Order
+        </button>
+        {order.status === 'pending' ? (
+          <button
+            className="primary-action-button"
+            disabled={isUpdating}
+            type="button"
+            onClick={() => onAccept(order.id)}>
+            Accept
+          </button>
+        ) : null}
+        {order.status === 'accepted' ? (
+          <button
+            className="primary-action-button"
+            disabled={isUpdating}
+            type="button"
+            onClick={() => onMarkPreparing(order.id)}>
+            Mark Preparing
+          </button>
+        ) : null}
+      </div>
+    </article>
+  );
+}
+
+type NewPartnerOrderPopupProps = {
+  isMarkingRead: boolean;
+  notification: AdminPartnerOrderNotification | null;
+  order: AdminPartnerOrder;
+  orderItems: AdminPartnerOrderItem[];
+  onDismiss: () => void;
+  onMarkRead: (notificationId: string) => void;
+  onViewOrder: () => void;
+};
+
+function NewPartnerOrderPopup({
+  isMarkingRead,
+  notification,
+  order,
+  orderItems,
+  onDismiss,
+  onMarkRead,
+  onViewOrder,
+}: NewPartnerOrderPopupProps) {
+  return (
+    <div className="partner-order-popup-backdrop" role="presentation">
+      <section
+        aria-labelledby="new-partner-order-title"
+        aria-modal="true"
+        className="partner-order-popup"
+        role="dialog">
+        <div className="latest-order-header">
+          <div>
+            <p className="eyebrow">Partner Alert</p>
+            <h2 id="new-partner-order-title">New Order Received</h2>
+            <p className="entity-meta">Order {order.id.slice(0, 8)} just arrived for the selected shop.</p>
+          </div>
+          <span className="status-pill active">{partnerOrderStatusLabels[order.status]}</span>
+        </div>
+
+        <div className="latest-order-grid">
+          <PreviewField label="Customer" value={order.customer_name || 'Customer'} />
+          <PreviewField label="Phone" value={order.customer_phone || 'No phone'} />
+          <PreviewField label="Address" value={order.delivery_address || 'No address'} />
+          <PreviewField label="Total" value={formatCurrency(Number(order.total_amount ?? 0))} />
+        </div>
+
+        <div className="latest-order-detail">
+          <div>
+            <span>Items</span>
+            <OrderItemsSummary items={orderItems} />
+          </div>
+          <div className="latest-order-totals">
+            <span>Payment {toTitleCase(order.payment_method || 'cash')}</span>
+            <strong>{formatCurrency(Number(order.total_amount ?? 0))}</strong>
+          </div>
+        </div>
+
+        {notification ? <p className="notification-message">{notification.message}</p> : null}
+
+        <div className="action-row form-action-row">
+          <button className="primary-action-button" type="button" onClick={onViewOrder}>
+            View Order
+          </button>
+          {notification && notification.status === 'unread' ? (
+            <button
+              className="secondary-button"
+              disabled={isMarkingRead}
+              type="button"
+              onClick={() => onMarkRead(notification.id)}>
+              {isMarkingRead ? 'Marking...' : 'Mark as Read'}
+            </button>
+          ) : null}
+          <button className="secondary-button" type="button" onClick={onDismiss}>
+            Dismiss
+          </button>
+        </div>
+      </section>
+    </div>
   );
 }
 
@@ -3644,6 +4713,97 @@ function getPartnerName(partnerId: string, partners: AdminBusinessPartner[]) {
   return partners.find((partner) => partner.id === partnerId)?.name ?? 'Unknown partner';
 }
 
+function getLatestPartnerOrder(orders: AdminPartnerOrder[]) {
+  return [...orders].sort((left, right) => {
+    return new Date(right.created_at).getTime() - new Date(left.created_at).getTime();
+  })[0] ?? null;
+}
+
+function getPartnerLatestOrderMetrics(
+  orders: AdminPartnerOrder[],
+  unreadNotifications: number
+): PartnerLatestOrderMetrics {
+  return {
+    completedToday: orders.filter((order) => order.status === 'completed' && isToday(order.updated_at)).length,
+    pending: orders.filter((order) => order.status === 'pending').length,
+    preparing: orders.filter((order) => order.status === 'preparing').length,
+    totalToday: orders.filter((order) => isToday(order.created_at)).length,
+    unreadNotifications,
+  };
+}
+
+function getPartnerOrderNotification(
+  partnerOrderId: string,
+  notifications: AdminPartnerOrderNotification[]
+) {
+  return (
+    notifications.find((notification) => notification.partner_order_id === partnerOrderId) ?? null
+  );
+}
+
+function isToday(value: string | null | undefined) {
+  if (!value) {
+    return false;
+  }
+
+  const date = new Date(value);
+  const today = new Date();
+
+  return (
+    date.getFullYear() === today.getFullYear() &&
+    date.getMonth() === today.getMonth() &&
+    date.getDate() === today.getDate()
+  );
+}
+
+function getDismissedPartnerOrderIds() {
+  if (typeof window === 'undefined') {
+    return [];
+  }
+
+  try {
+    const rawValue = window.localStorage.getItem(dismissedPartnerOrdersStorageKey);
+    const parsedValue: unknown = rawValue ? JSON.parse(rawValue) : [];
+
+    return Array.isArray(parsedValue)
+      ? parsedValue.filter((value): value is string => typeof value === 'string')
+      : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveDismissedPartnerOrderIds(orderIds: string[]) {
+  if (typeof window === 'undefined') {
+    return;
+  }
+
+  try {
+    window.localStorage.setItem(dismissedPartnerOrdersStorageKey, JSON.stringify(orderIds.slice(-100)));
+  } catch {
+    // Local storage is only used to reduce repeated popups; failure should not block dashboard work.
+  }
+}
+
+function getRateProfileScopeLabel(
+  profile: AdminPartnerDeliveryRateProfile,
+  partners: AdminBusinessPartner[]
+) {
+  if (profile.partner_id) {
+    return `Partner: ${getPartnerName(profile.partner_id, partners)}`;
+  }
+
+  if (profile.subcategory_id) {
+    return 'Sub-category rate';
+  }
+
+  if (profile.category_id) {
+    return 'Category rate';
+  }
+
+  return 'Fallback rate';
+}
+
 function getServiceCategoryName(
   categoryId: string | null,
   categories: AdminServiceCategory[]
@@ -3765,6 +4925,23 @@ function getPartnerProductForm(product: AdminPartnerProduct): PartnerProductForm
   };
 }
 
+function getRateProfileForm(profile: AdminPartnerDeliveryRateProfile): RateProfileFormState {
+  return {
+    baseFee: String(profile.base_fee),
+    baseKm: String(profile.base_km),
+    categoryId: profile.category_id ?? '',
+    isActive: profile.is_active,
+    isManualQuote: profile.is_manual_quote,
+    minimumFee: String(profile.minimum_fee),
+    name: profile.name,
+    partnerId: profile.partner_id ?? '',
+    perKmFee: String(profile.per_km_fee),
+    serviceFee: String(profile.service_fee),
+    serviceType: profile.service_type,
+    subcategoryId: profile.subcategory_id ?? '',
+  };
+}
+
 function getRestaurantInput(form: RestaurantFormState): RestaurantInput {
   return {
     address: requireText(form.address, 'Restaurant address'),
@@ -3846,6 +5023,23 @@ function getPartnerUserInput(form: PartnerUserFormState): PartnerUserInput {
     phone: normalizeOptionalText(form.phone),
     role: requireText(form.role, 'Partner role'),
     user_id: normalizeOptionalText(form.userId),
+  };
+}
+
+function getRateProfileInput(form: RateProfileFormState): PartnerDeliveryRateProfileInput {
+  return {
+    base_fee: requireNonNegativeNumber(form.baseFee, 'Base fee'),
+    base_km: requireNonNegativeNumber(form.baseKm, 'Base km'),
+    category_id: normalizeOptionalText(form.categoryId),
+    is_active: form.isActive,
+    is_manual_quote: form.isManualQuote,
+    minimum_fee: requireNonNegativeNumber(form.minimumFee, 'Minimum fee'),
+    name: requireText(form.name, 'Rate profile name'),
+    partner_id: normalizeOptionalText(form.partnerId),
+    per_km_fee: requireNonNegativeNumber(form.perKmFee, 'Per km fee'),
+    service_fee: requireNonNegativeNumber(form.serviceFee, 'Service fee'),
+    service_type: requireText(form.serviceType, 'Service type'),
+    subcategory_id: normalizeOptionalText(form.subcategoryId),
   };
 }
 
