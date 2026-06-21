@@ -12,6 +12,7 @@ import { subscribeToAdminBookings, subscribeToAdminFoodOrders } from './services
 import {
   assignRiderToBooking,
   assignRiderToFoodOrder,
+  assignPartnerOrderRider,
   bookingStatuses,
   createBusinessPartner,
   createMenuItem,
@@ -30,6 +31,9 @@ import {
   getMenuItems,
   getPartnerNotificationsByPartner,
   getPartnerOrderNotifications,
+  getPartnerOrderItems,
+  getPartnerOrders,
+  getPartnerOrdersByPartner,
   getPartnerProducts,
   getPartnerUsers,
   getRestaurants,
@@ -39,11 +43,13 @@ import {
   getUnreadPartnerNotificationCount,
   assignPartnerUserFoundation,
   markPartnerNotificationRead,
+  partnerOrderStatuses,
   togglePartnerProductAvailability,
   updateBusinessPartner,
   updateBookingStatus,
   updateFoodOrderStatus,
   updateMenuItem,
+  updatePartnerOrderStatus,
   updatePartnerProduct,
   updateMenuItemAvailability,
   updateMenuItemImageUrl,
@@ -59,6 +65,8 @@ import {
   type AdminMenuCategory,
   type AdminMenuItem,
   type AdminPartnerOrderNotification,
+  type AdminPartnerOrder,
+  type AdminPartnerOrderItem,
   type AdminPartnerProduct,
   type AdminPartnerUser,
   type AdminRestaurant,
@@ -72,7 +80,7 @@ import {
   type RestaurantInput,
 } from './services/bookings';
 
-import type { BookingStatus, FoodOrderStatus } from '../../src/types/database';
+import type { BookingStatus, FoodOrderStatus, PartnerOrderStatus } from '../../src/types/database';
 
 const statusLabels: Record<BookingStatus, string> = {
   accepted: 'Accepted',
@@ -93,7 +101,18 @@ const foodStatusLabels: Record<FoodOrderStatus, string> = {
   preparing: 'Preparing',
 };
 
+const partnerOrderStatusLabels: Record<PartnerOrderStatus, string> = {
+  accepted: 'Accepted',
+  cancelled: 'Cancelled',
+  completed: 'Completed',
+  on_the_way: 'On the Way',
+  pending: 'Pending',
+  picked_up: 'Ready for Pickup',
+  preparing: 'Preparing',
+};
+
 type StatusFilter = 'all' | BookingStatus;
+type PartnerOrderFilter = 'all' | PartnerOrderStatus;
 type LoadOptions = {
   showLoading?: boolean;
 };
@@ -245,6 +264,8 @@ export function App() {
   const [bookings, setBookings] = useState<AdminBooking[]>([]);
   const [foodOrders, setFoodOrders] = useState<AdminFoodOrder[]>([]);
   const [foodOrderItems, setFoodOrderItems] = useState<AdminFoodOrderItem[]>([]);
+  const [partnerOrders, setPartnerOrders] = useState<AdminPartnerOrder[]>([]);
+  const [partnerOrderItems, setPartnerOrderItems] = useState<AdminPartnerOrderItem[]>([]);
   const [restaurants, setRestaurants] = useState<AdminRestaurant[]>([]);
   const [menuCategories, setMenuCategories] = useState<AdminMenuCategory[]>([]);
   const [menuItems, setMenuItems] = useState<AdminMenuItem[]>([]);
@@ -260,6 +281,8 @@ export function App() {
     AdminPartnerOrderNotification[]
   >([]);
   const [previewPartnerProducts, setPreviewPartnerProducts] = useState<AdminPartnerProduct[]>([]);
+  const [previewPartnerOrders, setPreviewPartnerOrders] = useState<AdminPartnerOrder[]>([]);
+  const [previewPartnerOrderItems, setPreviewPartnerOrderItems] = useState<AdminPartnerOrderItem[]>([]);
   const [unreadPartnerNotificationCount, setUnreadPartnerNotificationCount] = useState(0);
   const [riders, setRiders] = useState<AdminRider[]>([]);
   const [restaurantForm, setRestaurantForm] = useState<RestaurantFormState>(emptyRestaurantForm);
@@ -277,12 +300,14 @@ export function App() {
   const [restaurantImageInputs, setRestaurantImageInputs] = useState<Record<string, string>>({});
   const [menuItemImageInputs, setMenuItemImageInputs] = useState<Record<string, string>>({});
   const [filter, setFilter] = useState<StatusFilter>('all');
+  const [partnerOrderFilter, setPartnerOrderFilter] = useState<PartnerOrderFilter>('all');
   const [isLoading, setIsLoading] = useState(true);
   const [isFoodLoading, setIsFoodLoading] = useState(true);
   const [isFoodManagementLoading, setIsFoodManagementLoading] = useState(true);
   const [isMarketplaceLoading, setIsMarketplaceLoading] = useState(true);
   const [updatingBookingId, setUpdatingBookingId] = useState('');
   const [updatingFoodOrderId, setUpdatingFoodOrderId] = useState('');
+  const [updatingPartnerOrderId, setUpdatingPartnerOrderId] = useState('');
   const [savingRestaurantId, setSavingRestaurantId] = useState('');
   const [savingMenuItemId, setSavingMenuItemId] = useState('');
   const [savingPartnerId, setSavingPartnerId] = useState('');
@@ -411,6 +436,17 @@ export function App() {
     }
   }, []);
 
+  const loadPartnerOrders = useCallback(async () => {
+    try {
+      const orderRows = await getPartnerOrders(partnerOrderFilter);
+      const itemRows = await getPartnerOrderItems(orderRows.map((order) => order.id));
+      setPartnerOrders(orderRows);
+      setPartnerOrderItems(itemRows);
+    } catch (error) {
+      setMarketplaceErrorMessage(`Unable to load partner orders. ${getErrorMessage(error)}`);
+    }
+  }, [partnerOrderFilter]);
+
   const loadFoodManagement = useCallback(async ({ showLoading = true }: LoadOptions = {}) => {
     if (showLoading) {
       setIsFoodManagementLoading(true);
@@ -503,6 +539,17 @@ export function App() {
     }
   }, []);
 
+  const loadPreviewPartnerOrders = useCallback(async (partnerId: string) => {
+    try {
+      const orderRows = await getPartnerOrdersByPartner(partnerId);
+      const itemRows = await getPartnerOrderItems(orderRows.map((order) => order.id));
+      setPreviewPartnerOrders(orderRows);
+      setPreviewPartnerOrderItems(itemRows);
+    } catch (error) {
+      setMarketplaceErrorMessage(`Unable to load partner preview orders. ${getErrorMessage(error)}`);
+    }
+  }, []);
+
   const refreshDashboard = useCallback(async () => {
     setIsLoading(true);
     setIsFoodLoading(true);
@@ -585,7 +632,18 @@ export function App() {
     } finally {
       setIsMarketplaceLoading(false);
     }
-  }, []);
+
+    try {
+      const partnerOrderRows = await getPartnerOrders(partnerOrderFilter);
+      const partnerOrderItemRows = await getPartnerOrderItems(
+        partnerOrderRows.map((order) => order.id)
+      );
+      setPartnerOrders(partnerOrderRows);
+      setPartnerOrderItems(partnerOrderItemRows);
+    } catch (error) {
+      setMarketplaceErrorMessage(`Unable to load partner orders. ${getErrorMessage(error)}`);
+    }
+  }, [partnerOrderFilter]);
 
   async function handleStatusChange(bookingId: string, status: BookingStatus) {
     setUpdatingBookingId(bookingId);
@@ -674,6 +732,62 @@ export function App() {
       setFoodErrorMessage(`Unable to assign rider to food order. ${getErrorMessage(error)}`);
     } finally {
       setUpdatingFoodOrderId('');
+    }
+  }
+
+  async function handlePartnerOrderStatusChange(
+    partnerOrderId: string,
+    status: PartnerOrderStatus
+  ) {
+    const previousPartnerOrders = partnerOrders;
+    const now = new Date().toISOString();
+
+    setUpdatingPartnerOrderId(partnerOrderId);
+    setMarketplaceErrorMessage('');
+    setMarketplaceMessage('');
+    setPartnerOrders((currentOrders) =>
+      currentOrders.map((order) =>
+        order.id === partnerOrderId ? { ...order, status, updated_at: now } : order
+      )
+    );
+
+    try {
+      await updatePartnerOrderStatus(partnerOrderId, status);
+      setMarketplaceMessage(`Partner order status updated to ${partnerOrderStatusLabels[status]}.`);
+      await loadPartnerOrders();
+
+      if (previewPartnerId) {
+        await loadPreviewPartnerOrders(previewPartnerId);
+      }
+    } catch (error) {
+      setPartnerOrders(previousPartnerOrders);
+      setMarketplaceErrorMessage(`Unable to update partner order status. ${getErrorMessage(error)}`);
+    } finally {
+      setUpdatingPartnerOrderId('');
+    }
+  }
+
+  async function handlePartnerOrderRiderAssignment(partnerOrderId: string, riderId: string) {
+    setUpdatingPartnerOrderId(partnerOrderId);
+    setMarketplaceErrorMessage('');
+    setMarketplaceMessage('');
+
+    try {
+      await assignPartnerOrderRider(partnerOrderId, riderId || null);
+      const riderName = getRiderName(riderId || null, riders);
+      setMarketplaceMessage(
+        riderId ? `Assigned ${riderName} to partner order.` : 'Partner order rider assignment cleared.'
+      );
+      await loadPartnerOrders();
+      await loadRiders();
+
+      if (previewPartnerId) {
+        await loadPreviewPartnerOrders(previewPartnerId);
+      }
+    } catch (error) {
+      setMarketplaceErrorMessage(`Unable to assign rider to partner order. ${getErrorMessage(error)}`);
+    } finally {
+      setUpdatingPartnerOrderId('');
     }
   }
 
@@ -1028,6 +1142,8 @@ export function App() {
 
     if (!partnerId) {
       setPreviewPartnerNotifications([]);
+      setPreviewPartnerOrders([]);
+      setPreviewPartnerOrderItems([]);
       return;
     }
 
@@ -1035,6 +1151,7 @@ export function App() {
       await getBusinessPartnerById(partnerId);
       await loadPreviewPartnerNotifications(partnerId);
       await loadPreviewPartnerProducts(partnerId);
+      await loadPreviewPartnerOrders(partnerId);
     } catch (error) {
       setMarketplaceErrorMessage(`Unable to load partner preview. ${getErrorMessage(error)}`);
     }
@@ -1044,17 +1161,29 @@ export function App() {
     if (!adminAuthState.isAdmin || !previewPartnerId) {
       setPreviewPartnerNotifications([]);
       setPreviewPartnerProducts([]);
+      setPreviewPartnerOrders([]);
+      setPreviewPartnerOrderItems([]);
       return;
     }
 
     void loadPreviewPartnerNotifications(previewPartnerId);
     void loadPreviewPartnerProducts(previewPartnerId);
+    void loadPreviewPartnerOrders(previewPartnerId);
   }, [
     adminAuthState.isAdmin,
     loadPreviewPartnerNotifications,
+    loadPreviewPartnerOrders,
     loadPreviewPartnerProducts,
     previewPartnerId,
   ]);
+
+  useEffect(() => {
+    if (!adminAuthState.isAdmin) {
+      return;
+    }
+
+    void loadPartnerOrders();
+  }, [adminAuthState.isAdmin, loadPartnerOrders]);
 
   useEffect(() => {
     if (!adminAuthState.isAdmin || !selectedProductPartnerId) {
@@ -1105,6 +1234,7 @@ export function App() {
     function refreshFoodOrdersFromRealtime() {
       void loadFoodOrders({ showLoading: false });
       void loadMarketplace({ showLoading: false });
+      void loadPartnerOrders();
     }
 
     const unsubscribeBookings = subscribeToAdminBookings(refreshBookingsFromRealtime, () => {
@@ -1126,7 +1256,7 @@ export function App() {
       clearInterval(bookingsPolling);
       clearInterval(foodOrdersPolling);
     };
-  }, [adminAuthState.isAdmin, loadBookings, loadFoodOrders, loadMarketplace, loadRiders]);
+  }, [adminAuthState.isAdmin, loadBookings, loadFoodOrders, loadMarketplace, loadPartnerOrders, loadRiders]);
 
   const filteredBookings = useMemo(() => {
     if (filter === 'all') {
@@ -2242,6 +2372,73 @@ export function App() {
                       </div>
                     )}
                   </div>
+                  <div className="preview-products-section">
+                    <div className="section-title-row">
+                      <div>
+                        <h3>Partner Orders</h3>
+                        <p className="entity-meta">
+                          Admin can assign these orders to riders and update fulfillment status.
+                        </p>
+                      </div>
+                      <span className="count-pill">{previewPartnerOrders.length} orders</span>
+                    </div>
+                    {previewPartnerOrders.length === 0 ? (
+                      <p className="empty-state">No partner orders for this shop yet.</p>
+                    ) : (
+                      <div className="entity-list">
+                        {previewPartnerOrders.slice(0, 5).map((order) => (
+                          <article className="preview-product-card" key={order.id}>
+                            <div>
+                              <h4>Order {order.id.slice(0, 8)}</h4>
+                              <p className="entity-meta">
+                                {order.customer_name || 'Customer'} - {formatCurrency(Number(order.total_amount ?? 0))}
+                              </p>
+                              <OrderItemsSummary
+                                items={getPartnerOrderItemsForOrder(order.id, previewPartnerOrderItems)}
+                              />
+                              <div className="status-row">
+                                <span className="status-pill active">
+                                  {partnerOrderStatusLabels[order.status]}
+                                </span>
+                                <span className={order.assigned_rider_id ? 'status-pill active' : 'status-pill'}>
+                                  {getRiderName(order.assigned_rider_id, riders)}
+                                </span>
+                              </div>
+                            </div>
+                            <div className="action-row">
+                              <button
+                                className="secondary-button"
+                                disabled={updatingPartnerOrderId === order.id}
+                                type="button"
+                                onClick={() =>
+                                  void handlePartnerOrderStatusChange(order.id, 'accepted')
+                                }>
+                                Accept
+                              </button>
+                              <button
+                                className="secondary-button"
+                                disabled={updatingPartnerOrderId === order.id}
+                                type="button"
+                                onClick={() =>
+                                  void handlePartnerOrderStatusChange(order.id, 'preparing')
+                                }>
+                                Preparing
+                              </button>
+                              <button
+                                className="secondary-button"
+                                disabled={updatingPartnerOrderId === order.id}
+                                type="button"
+                                onClick={() =>
+                                  void handlePartnerOrderStatusChange(order.id, 'picked_up')
+                                }>
+                                Ready for Pickup
+                              </button>
+                            </div>
+                          </article>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                   <div className="preview-notification-list">
                     {previewPartnerNotifications.length === 0 ? (
                       <p className="empty-state">No new partner orders yet.</p>
@@ -2499,6 +2696,118 @@ export function App() {
                       </select>
                     </td>
                     <td>{formatDate(foodOrder.created_at)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
+
+      <section className="panel">
+        <div className="panel-header">
+          <div>
+            <p className="eyebrow">Partner Orders</p>
+            <h2>Generic partner deliveries</h2>
+          </div>
+
+          <label className="filter-control">
+            <span>Status</span>
+            <select
+              value={partnerOrderFilter}
+              onChange={(event) => setPartnerOrderFilter(event.target.value as PartnerOrderFilter)}>
+              <option value="all">All statuses</option>
+              {partnerOrderStatuses.map((status) => (
+                <option key={status} value={status}>
+                  {partnerOrderStatusLabels[status]}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+
+        {partnerOrders.length === 0 ? (
+          <p className="empty-state">No partner orders found for this filter.</p>
+        ) : (
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Partner</th>
+                  <th>Customer</th>
+                  <th>Phone</th>
+                  <th>Items</th>
+                  <th>Delivery Address</th>
+                  <th>Subtotal</th>
+                  <th>Delivery Fee</th>
+                  <th>Total</th>
+                  <th>Payment</th>
+                  <th>Rider</th>
+                  <th>Assign Rider</th>
+                  <th>Status</th>
+                  <th>Created</th>
+                </tr>
+              </thead>
+              <tbody>
+                {partnerOrders.map((partnerOrder) => (
+                  <tr key={partnerOrder.id}>
+                    <td>{getPartnerName(partnerOrder.partner_id, businessPartners)}</td>
+                    <td>{partnerOrder.customer_name || 'Customer'}</td>
+                    <td>{partnerOrder.customer_phone || 'No phone'}</td>
+                    <td>
+                      <OrderItemsSummary
+                        items={getPartnerOrderItemsForOrder(partnerOrder.id, partnerOrderItems)}
+                      />
+                    </td>
+                    <td>
+                      <AddressWithCoordinates
+                        coordinates={formatCoordinates(
+                          partnerOrder.delivery_lat,
+                          partnerOrder.delivery_lng
+                        )}
+                        label={partnerOrder.delivery_address || 'No address'}
+                      />
+                    </td>
+                    <td>{formatCurrency(Number(partnerOrder.subtotal ?? 0))}</td>
+                    <td>{formatCurrency(Number(partnerOrder.delivery_fee ?? 0))}</td>
+                    <td>{formatCurrency(Number(partnerOrder.total_amount ?? 0))}</td>
+                    <td>{toTitleCase(partnerOrder.payment_method || 'cash')}</td>
+                    <td>{getRiderName(partnerOrder.assigned_rider_id, riders)}</td>
+                    <td>
+                      <select
+                        className="rider-select"
+                        disabled={updatingPartnerOrderId === partnerOrder.id}
+                        value={partnerOrder.assigned_rider_id ?? ''}
+                        onChange={(event) =>
+                          handlePartnerOrderRiderAssignment(partnerOrder.id, event.target.value)
+                        }>
+                        <option value="">Unassigned</option>
+                        {riders.map((rider) => (
+                          <option key={rider.id} value={rider.id}>
+                            {rider.full_name}
+                          </option>
+                        ))}
+                      </select>
+                    </td>
+                    <td>
+                      <select
+                        className="food-status-select"
+                        disabled={updatingPartnerOrderId === partnerOrder.id}
+                        value={partnerOrder.status}
+                        onChange={(event) =>
+                          handlePartnerOrderStatusChange(
+                            partnerOrder.id,
+                            event.target.value as PartnerOrderStatus
+                          )
+                        }>
+                        {partnerOrderStatuses.map((status) => (
+                          <option key={status} value={status}>
+                            {partnerOrderStatusLabels[status]}
+                          </option>
+                        ))}
+                      </select>
+                    </td>
+                    <td>{formatDate(partnerOrder.created_at)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -3072,6 +3381,22 @@ function PreviewField({ label, value }: { label: string; value: string | null | 
   );
 }
 
+function OrderItemsSummary({ items }: { items: AdminPartnerOrderItem[] }) {
+  if (items.length === 0) {
+    return <span className="entity-meta">No items</span>;
+  }
+
+  return (
+    <div className="order-items-summary">
+      {items.map((item) => (
+        <span key={item.id}>
+          {item.quantity}x {item.product_name}
+        </span>
+      ))}
+    </div>
+  );
+}
+
 function AddressWithCoordinates({
   coordinates,
   label,
@@ -3183,6 +3508,13 @@ function formatDate(value: string) {
   }).format(new Date(value));
 }
 
+function toTitleCase(value: string) {
+  return value
+    .split('_')
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' ');
+}
+
 function formatOptionalDate(value: string | null | undefined) {
   return value ? formatDate(value) : 'No live location';
 }
@@ -3254,6 +3586,13 @@ function getFoodOrderItemCount(foodOrderId: string, foodOrderItems: AdminFoodOrd
   return foodOrderItems
     .filter((item) => item.food_order_id === foodOrderId)
     .reduce((total, item) => total + item.quantity, 0);
+}
+
+function getPartnerOrderItemsForOrder(
+  partnerOrderId: string,
+  partnerOrderItems: AdminPartnerOrderItem[]
+) {
+  return partnerOrderItems.filter((item) => item.partner_order_id === partnerOrderId);
 }
 
 function getRestaurantForm(restaurant: AdminRestaurant): RestaurantFormState {

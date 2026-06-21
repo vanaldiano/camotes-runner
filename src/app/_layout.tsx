@@ -8,6 +8,7 @@ import { getCurrentAuthState, subscribeToAuthChanges, type AuthState } from '@/s
 import { BookingSimulationProvider } from '@/services/booking-simulation';
 import { FoodCartProvider } from '@/services/food-cart';
 import { FoodOrderStatusProvider } from '@/services/food-order-status';
+import { PartnerCartProvider } from '@/services/partner-cart';
 
 export default function RootLayout() {
   const colorScheme = useColorScheme();
@@ -15,25 +16,30 @@ export default function RootLayout() {
     <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
       <BookingSimulationProvider>
         <FoodCartProvider>
-          <FoodOrderStatusProvider>
-            <PushNotificationBootstrap />
-            <AnimatedSplashOverlay />
-            <Stack screenOptions={{ headerShown: false }}>
-              <Stack.Screen name="(tabs)" />
-              <Stack.Screen name="category/[id]" />
-              <Stack.Screen name="partner/[id]" />
-              <Stack.Screen name="restaurants" />
-              <Stack.Screen name="restaurant/[id]" />
-              <Stack.Screen name="cart" />
-              <Stack.Screen name="food-checkout" />
-              <Stack.Screen name="food-tracking" />
-              <Stack.Screen name="matching" />
-              <Stack.Screen name="runner-found" />
-              <Stack.Screen name="tracking" />
-              <Stack.Screen name="rider" />
-              <Stack.Screen name="notification-debug" />
-            </Stack>
-          </FoodOrderStatusProvider>
+          <PartnerCartProvider>
+            <FoodOrderStatusProvider>
+              <PushNotificationBootstrap />
+              <AnimatedSplashOverlay />
+              <Stack screenOptions={{ headerShown: false }}>
+                <Stack.Screen name="(tabs)" />
+                <Stack.Screen name="category/[id]" />
+                <Stack.Screen name="partner/[id]" />
+                <Stack.Screen name="partner-cart/[partnerId]" />
+                <Stack.Screen name="partner-checkout/[partnerId]" />
+                <Stack.Screen name="partner-order-success/[id]" />
+                <Stack.Screen name="restaurants" />
+                <Stack.Screen name="restaurant/[id]" />
+                <Stack.Screen name="cart" />
+                <Stack.Screen name="food-checkout" />
+                <Stack.Screen name="food-tracking" />
+                <Stack.Screen name="matching" />
+                <Stack.Screen name="runner-found" />
+                <Stack.Screen name="tracking" />
+                <Stack.Screen name="rider" />
+                <Stack.Screen name="notification-debug" />
+              </Stack>
+            </FoodOrderStatusProvider>
+          </PartnerCartProvider>
         </FoodCartProvider>
       </BookingSimulationProvider>
     </ThemeProvider>

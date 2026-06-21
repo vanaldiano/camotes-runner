@@ -9,6 +9,7 @@ import {
 import type {
   BookingStatus,
   FoodOrderStatus,
+  PartnerOrderStatus,
   Tables,
   TablesInsert,
   TablesUpdate,
@@ -35,6 +36,8 @@ export type AdminBusinessPartner = Tables<'business_partners'>;
 export type AdminPartnerUser = Tables<'partner_users'>;
 export type AdminPartnerOrderNotification = Tables<'partner_order_notifications'>;
 export type AdminPartnerProduct = Tables<'partner_products'>;
+export type AdminPartnerOrder = Tables<'partner_orders'>;
+export type AdminPartnerOrderItem = Tables<'partner_order_items'>;
 export type AdminFoodOrder = Tables<'food_orders'> & {
   latest_rider_location_updated_at?: string | null;
 };
@@ -137,6 +140,16 @@ export const foodOrderStatuses: FoodOrderStatus[] = [
   'picked_up',
   'on_the_way',
   'delivered',
+  'cancelled',
+];
+
+export const partnerOrderStatuses: PartnerOrderStatus[] = [
+  'pending',
+  'accepted',
+  'preparing',
+  'picked_up',
+  'on_the_way',
+  'completed',
   'cancelled',
 ];
 
@@ -519,6 +532,124 @@ export async function getPartnerProducts(partnerId: string) {
   }
 
   return data ?? [];
+}
+
+export async function getPartnerOrders(status?: PartnerOrderStatus | 'all') {
+  let query = supabase
+    .from('partner_orders')
+    .select('*')
+    .order('created_at', { ascending: false });
+
+  if (status && status !== 'all') {
+    query = query.eq('status', status);
+  }
+
+  const { data, error } = await query;
+
+  if (error) {
+    throw error;
+  }
+
+  return data ?? [];
+}
+
+export async function getPartnerOrdersByPartner(partnerId: string) {
+  const { data, error } = await supabase
+    .from('partner_orders')
+    .select('*')
+    .eq('partner_id', partnerId)
+    .order('created_at', { ascending: false })
+    .limit(25);
+
+  if (error) {
+    throw error;
+  }
+
+  return data ?? [];
+}
+
+export async function getPartnerOrderItems(orderIds: string[]) {
+  if (orderIds.length === 0) {
+    return [];
+  }
+
+  const { data, error } = await supabase
+    .from('partner_order_items')
+    .select('*')
+    .in('partner_order_id', orderIds)
+    .order('created_at', { ascending: true });
+
+  if (error) {
+    throw error;
+  }
+
+  return data ?? [];
+}
+
+export async function updatePartnerOrderStatus(
+  orderId: string,
+  status: PartnerOrderStatus
+) {
+  const timestampUpdates: TablesUpdate<'partner_orders'> = {};
+  const now = new Date().toISOString();
+
+  if (status === 'accepted') {
+    timestampUpdates.accepted_at = now;
+    timestampUpdates.partner_status = 'accepted';
+  }
+
+  if (status === 'completed') {
+    timestampUpdates.completed_at = now;
+    timestampUpdates.rider_status = 'completed';
+  }
+
+  if (status === 'cancelled') {
+    timestampUpdates.cancelled_at = now;
+  }
+
+  const { data, error } = await supabase
+    .from('partner_orders')
+    .update({
+      ...timestampUpdates,
+      status,
+      updated_at: now,
+    })
+    .eq('id', orderId)
+    .select('*')
+    .maybeSingle();
+
+  if (error) {
+    throw error;
+  }
+
+  if (!data) {
+    throw new Error(`Partner order ${orderId} was not found.`);
+  }
+
+  return data;
+}
+
+export async function assignPartnerOrderRider(orderId: string, riderId: string | null) {
+  const { data, error } = await supabase
+    .from('partner_orders')
+    .update({
+      assigned_at: riderId ? new Date().toISOString() : null,
+      assigned_rider_id: riderId,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', orderId)
+    .select('*')
+    .maybeSingle();
+
+  if (error) {
+    throw error;
+  }
+
+  if (!data) {
+    throw new Error(`Partner order ${orderId} was not found.`);
+  }
+
+  return data;
 }
 
 export async function createPartnerProduct(input: PartnerProductInput) {

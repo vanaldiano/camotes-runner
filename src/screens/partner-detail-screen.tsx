@@ -1,5 +1,6 @@
+import { router } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { AppIcon } from '@/components/app-icon';
 import { AppScreen } from '@/components/app-screen';
@@ -11,6 +12,7 @@ import {
   type PartnerProduct,
 } from '@/services/partner-product-service';
 import { getBusinessPartnerById, type BusinessPartnerListItem } from '@/services/partner-service';
+import { usePartnerCart } from '@/services/partner-cart';
 
 type PartnerDetailScreenProps = {
   partnerId: string;
@@ -21,6 +23,8 @@ export function PartnerDetailScreen({ partnerId }: PartnerDetailScreenProps) {
   const [products, setProducts] = useState<PartnerProduct[]>([]);
   const [isProductLoading, setIsProductLoading] = useState(false);
   const [message, setMessage] = useState('Loading partner shop...');
+  const { addItem, cartSubtotal, itemCount, items, partnerId: cartPartnerId } = usePartnerCart();
+  const isCurrentPartnerCart = cartPartnerId === partnerId;
 
   useEffect(() => {
     let isMounted = true;
@@ -100,17 +104,34 @@ export function PartnerDetailScreen({ partnerId }: PartnerDetailScreenProps) {
                       </Text>
                       <View style={styles.productFooter}>
                         <Text style={styles.productUnit}>{product.unit_label ?? 'Item'}</Text>
-                        <Text style={styles.productAction}>View</Text>
+                        <Pressable
+                          accessibilityRole="button"
+                          style={({ pressed }) => [styles.addButton, pressed && styles.pressed]}
+                          onPress={() => addItem({ partner, product })}>
+                          <Text style={styles.productAction}>
+                            {getProductQuantity(product.id, items, isCurrentPartnerCart) > 0
+                              ? `${getProductQuantity(product.id, items, isCurrentPartnerCart)} in cart`
+                              : 'Add'}
+                          </Text>
+                        </Pressable>
                       </View>
                     </View>
                   </View>
                 ))}
               </View>
-              <View style={styles.noticeCard}>
-                <Text style={styles.noticeText}>
-                  Ordering for this partner category is coming soon.
-                </Text>
-              </View>
+              {isCurrentPartnerCart && itemCount > 0 ? (
+                <Pressable
+                  accessibilityRole="button"
+                  style={({ pressed }) => [styles.cartSummary, pressed && styles.pressed]}
+                  onPress={() =>
+                    router.push({ pathname: '/partner-cart/[partnerId]', params: { partnerId } })
+                  }>
+                  <Text style={styles.cartSummaryText}>
+                    {itemCount} items - {formatCurrency(cartSubtotal)}
+                  </Text>
+                  <Text style={styles.cartSummaryAction}>View Cart</Text>
+                </Pressable>
+              ) : null}
             </View>
           ) : (
             <View style={styles.comingSoonCard}>
@@ -141,6 +162,18 @@ export function PartnerDetailScreen({ partnerId }: PartnerDetailScreenProps) {
   );
 }
 
+function getProductQuantity(
+  productId: string,
+  items: { id: string; quantity: number }[],
+  isCurrentPartnerCart: boolean
+) {
+  if (!isCurrentPartnerCart) {
+    return 0;
+  }
+
+  return items.find((item) => item.id === productId)?.quantity ?? 0;
+}
+
 function formatCurrency(value: number) {
   return new Intl.NumberFormat('en-PH', {
     currency: 'PHP',
@@ -162,6 +195,35 @@ const styles = StyleSheet.create({
   category: {
     color: BrandColors.green,
     fontSize: 13,
+    fontWeight: '900',
+  },
+  addButton: {
+    backgroundColor: BrandColors.softGreen,
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  cartSummary: {
+    alignItems: 'center',
+    backgroundColor: BrandColors.green,
+    borderRadius: 22,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    padding: 16,
+    shadowColor: BrandColors.darkGreen,
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.16,
+    shadowRadius: 16,
+    elevation: 4,
+  },
+  cartSummaryAction: {
+    color: BrandColors.yellow,
+    fontSize: 14,
+    fontWeight: '900',
+  },
+  cartSummaryText: {
+    color: BrandColors.white,
+    fontSize: 15,
     fontWeight: '900',
   },
   comingSoonCard: {
@@ -257,16 +319,8 @@ const styles = StyleSheet.create({
     fontWeight: '900',
     lineHeight: 28,
   },
-  noticeCard: {
-    backgroundColor: BrandColors.paleYellow,
-    borderRadius: 18,
-    padding: 14,
-  },
-  noticeText: {
-    color: BrandColors.darkGreen,
-    fontSize: 13,
-    fontWeight: '900',
-    lineHeight: 19,
+  pressed: {
+    opacity: 0.86,
   },
   productAction: {
     color: BrandColors.green,

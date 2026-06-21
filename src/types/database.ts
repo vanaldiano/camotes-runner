@@ -12,6 +12,14 @@ export type PaymentMethod = 'Cash' | 'GCash';
 export type UserRole = 'customer' | 'rider' | 'admin';
 export type NotificationRecipientType = 'customer' | 'rider' | 'admin' | 'unknown';
 export type NotificationLogStatus = 'queued' | 'sent' | 'failed' | 'skipped';
+export type PartnerOrderStatus =
+  | 'pending'
+  | 'accepted'
+  | 'preparing'
+  | 'picked_up'
+  | 'on_the_way'
+  | 'completed'
+  | 'cancelled';
 
 export type FoodOrderStatus =
   | 'pending'
@@ -705,6 +713,192 @@ export type Database = {
           },
         ];
       };
+      partner_orders: {
+        Row: {
+          accepted_at: string | null;
+          assigned_at: string | null;
+          assigned_rider_id: string | null;
+          cancelled_at: string | null;
+          completed_at: string | null;
+          created_at: string;
+          customer_id: string | null;
+          customer_name: string | null;
+          customer_phone: string | null;
+          delivery_address: string | null;
+          delivery_fee: number;
+          delivery_lat: number | null;
+          delivery_lng: number | null;
+          id: string;
+          notes: string | null;
+          partner_id: string;
+          partner_status: string;
+          payment_method: string;
+          rider_status: string | null;
+          service_fee: number;
+          status: PartnerOrderStatus;
+          subtotal: number;
+          total_amount: number;
+          updated_at: string;
+        };
+        Insert: {
+          accepted_at?: string | null;
+          assigned_at?: string | null;
+          assigned_rider_id?: string | null;
+          cancelled_at?: string | null;
+          completed_at?: string | null;
+          created_at?: string;
+          customer_id?: string | null;
+          customer_name?: string | null;
+          customer_phone?: string | null;
+          delivery_address?: string | null;
+          delivery_fee?: number;
+          delivery_lat?: number | null;
+          delivery_lng?: number | null;
+          id?: string;
+          notes?: string | null;
+          partner_id: string;
+          partner_status?: string;
+          payment_method?: string;
+          rider_status?: string | null;
+          service_fee?: number;
+          status?: PartnerOrderStatus;
+          subtotal?: number;
+          total_amount?: number;
+          updated_at?: string;
+        };
+        Update: {
+          accepted_at?: string | null;
+          assigned_at?: string | null;
+          assigned_rider_id?: string | null;
+          cancelled_at?: string | null;
+          completed_at?: string | null;
+          created_at?: string;
+          customer_id?: string | null;
+          customer_name?: string | null;
+          customer_phone?: string | null;
+          delivery_address?: string | null;
+          delivery_fee?: number;
+          delivery_lat?: number | null;
+          delivery_lng?: number | null;
+          id?: string;
+          notes?: string | null;
+          partner_id?: string;
+          partner_status?: string;
+          payment_method?: string;
+          rider_status?: string | null;
+          service_fee?: number;
+          status?: PartnerOrderStatus;
+          subtotal?: number;
+          total_amount?: number;
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'partner_orders_assigned_rider_id_fkey';
+            columns: ['assigned_rider_id'];
+            referencedRelation: 'riders';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'partner_orders_customer_id_fkey';
+            columns: ['customer_id'];
+            referencedRelation: 'profiles';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'partner_orders_partner_id_fkey';
+            columns: ['partner_id'];
+            referencedRelation: 'business_partners';
+            referencedColumns: ['id'];
+          },
+        ];
+      };
+      partner_order_items: {
+        Row: {
+          created_at: string;
+          id: string;
+          line_total: number;
+          partner_order_id: string;
+          product_description: string | null;
+          product_id: string | null;
+          product_name: string;
+          quantity: number;
+          unit_price: number;
+        };
+        Insert: {
+          created_at?: string;
+          id?: string;
+          line_total?: number;
+          partner_order_id: string;
+          product_description?: string | null;
+          product_id?: string | null;
+          product_name: string;
+          quantity?: number;
+          unit_price?: number;
+        };
+        Update: {
+          created_at?: string;
+          id?: string;
+          line_total?: number;
+          partner_order_id?: string;
+          product_description?: string | null;
+          product_id?: string | null;
+          product_name?: string;
+          quantity?: number;
+          unit_price?: number;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'partner_order_items_partner_order_id_fkey';
+            columns: ['partner_order_id'];
+            referencedRelation: 'partner_orders';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'partner_order_items_product_id_fkey';
+            columns: ['product_id'];
+            referencedRelation: 'partner_products';
+            referencedColumns: ['id'];
+          },
+        ];
+      };
+      partner_order_status_logs: {
+        Row: {
+          changed_by: string | null;
+          created_at: string;
+          id: string;
+          new_status: PartnerOrderStatus;
+          note: string | null;
+          old_status: PartnerOrderStatus | null;
+          partner_order_id: string;
+        };
+        Insert: {
+          changed_by?: string | null;
+          created_at?: string;
+          id?: string;
+          new_status: PartnerOrderStatus;
+          note?: string | null;
+          old_status?: PartnerOrderStatus | null;
+          partner_order_id: string;
+        };
+        Update: {
+          changed_by?: string | null;
+          created_at?: string;
+          id?: string;
+          new_status?: PartnerOrderStatus;
+          note?: string | null;
+          old_status?: PartnerOrderStatus | null;
+          partner_order_id?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'partner_order_status_logs_partner_order_id_fkey';
+            columns: ['partner_order_id'];
+            referencedRelation: 'partner_orders';
+            referencedColumns: ['id'];
+          },
+        ];
+      };
       restaurants: {
         Row: {
           address: string;
@@ -961,6 +1155,7 @@ export type Database = {
           id: string;
           message: string;
           notification_type: string;
+          partner_order_id: string | null;
           partner_id: string;
           read_at: string | null;
           status: string;
@@ -972,6 +1167,7 @@ export type Database = {
           id?: string;
           message: string;
           notification_type?: string;
+          partner_order_id?: string | null;
           partner_id: string;
           read_at?: string | null;
           status?: string;
@@ -983,6 +1179,7 @@ export type Database = {
           id?: string;
           message?: string;
           notification_type?: string;
+          partner_order_id?: string | null;
           partner_id?: string;
           read_at?: string | null;
           status?: string;
@@ -993,6 +1190,12 @@ export type Database = {
             foreignKeyName: 'partner_order_notifications_food_order_id_fkey';
             columns: ['food_order_id'];
             referencedRelation: 'food_orders';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'partner_order_notifications_partner_order_id_fkey';
+            columns: ['partner_order_id'];
+            referencedRelation: 'partner_orders';
             referencedColumns: ['id'];
           },
           {
@@ -1085,7 +1288,23 @@ export type Database = {
       };
     };
     Views: Record<string, never>;
-    Functions: Record<string, never>;
+    Functions: {
+      create_partner_order_with_items: {
+        Args: {
+          p_customer_id: string | null;
+          p_customer_name: string | null;
+          p_customer_phone: string | null;
+          p_delivery_address: string | null;
+          p_delivery_lat: number | null;
+          p_delivery_lng: number | null;
+          p_items: Json;
+          p_notes: string | null;
+          p_partner_id: string;
+          p_payment_method: string | null;
+        };
+        Returns: string;
+      };
+    };
     Enums: Record<string, never>;
     CompositeTypes: Record<string, never>;
   };

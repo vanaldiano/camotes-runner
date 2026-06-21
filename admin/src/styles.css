@@ -548,6 +548,15 @@ textarea {
   gap: 8px;
 }
 
+.order-items-summary {
+  display: grid;
+  gap: 4px;
+  color: #12321f;
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 18px;
+}
+
 .preview-field {
   display: grid;
   gap: 6px;
