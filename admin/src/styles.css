@@ -872,6 +872,38 @@ textarea {
   padding: 12px;
 }
 
+.preview-product-main {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  min-width: 0;
+}
+
+.partner-product-preview-form {
+  border: 1px solid #dce8df;
+  border-radius: 22px;
+  background: #fbfdfc;
+  padding: 16px;
+}
+
+.partner-product-image-picker {
+  display: grid;
+  grid-template-columns: 96px minmax(0, 1fr);
+  gap: 14px;
+  align-items: center;
+  border: 1px solid #dce8df;
+  border-radius: 18px;
+  background: white;
+  padding: 12px;
+}
+
+.product-upload-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+}
+
 .status-row {
   display: flex;
   flex-wrap: wrap;
@@ -1154,6 +1186,14 @@ textarea {
 
   .image-editor-row {
     grid-template-columns: 64px minmax(0, 1fr);
+  }
+
+  .partner-product-image-picker {
+    grid-template-columns: 1fr;
+  }
+
+  .preview-product-main {
+    flex-direction: column;
   }
 
   .image-preview {

@@ -175,6 +175,7 @@ function createSampleProduct(
     created_at: now,
     description,
     id: `sample-product-${partnerId}-${name.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`,
+    image_path: null,
     image_url: null,
     is_active: true,
     is_available: true,

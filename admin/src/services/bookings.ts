@@ -132,6 +132,7 @@ export type PartnerDeliveryRateProfileInput = Pick<
 
 const restaurantImageBucket = 'restaurant-images';
 const menuImageBucket = 'menu-images';
+const partnerProductImageBucket = 'partner-products';
 
 export class AdminBookingNotFoundError extends Error {
   constructor(bookingId: string) {
@@ -717,6 +718,10 @@ export async function togglePartnerProductAvailability(
   isAvailable: boolean
 ) {
   return updatePartnerProduct(productId, { is_available: isAvailable });
+}
+
+export async function uploadPartnerProductImage(partnerId: string, file: File) {
+  return uploadImageFile(partnerProductImageBucket, partnerId, file);
 }
 
 export async function getPartnerDeliveryRateProfiles() {

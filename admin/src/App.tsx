@@ -56,6 +56,7 @@ import {
   updateBookingStatus,
   updateFoodOrderStatus,
   updateMenuItem,
+  uploadPartnerProductImage,
   updatePartnerDeliveryRateProfile,
   updatePartnerOrderStatus,
   updatePartnerProduct,
@@ -404,6 +405,9 @@ export function App() {
   const [editingPartnerId, setEditingPartnerId] = useState('');
   const [editingPartnerProductId, setEditingPartnerProductId] = useState('');
   const [editingRateProfileId, setEditingRateProfileId] = useState('');
+  const [isPreviewProductFormOpen, setIsPreviewProductFormOpen] = useState(false);
+  const [partnerProductImageFile, setPartnerProductImageFile] = useState<File | null>(null);
+  const [partnerProductImagePreviewUrl, setPartnerProductImagePreviewUrl] = useState('');
   const [restaurantImageInputs, setRestaurantImageInputs] = useState<Record<string, string>>({});
   const [menuItemImageInputs, setMenuItemImageInputs] = useState<Record<string, string>>({});
   const [filter, setFilter] = useState<StatusFilter>('all');
@@ -426,6 +430,7 @@ export function App() {
   const [savingMenuItemImageId, setSavingMenuItemImageId] = useState('');
   const [uploadingRestaurantImageId, setUploadingRestaurantImageId] = useState('');
   const [uploadingMenuItemImageId, setUploadingMenuItemImageId] = useState('');
+  const [uploadingPartnerProductImageId, setUploadingPartnerProductImageId] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
   const [foodErrorMessage, setFoodErrorMessage] = useState('');
   const [foodManagementMessage, setFoodManagementMessage] = useState('');
@@ -460,6 +465,14 @@ export function App() {
 
     return subscribeToAdminAuthChanges(setAdminAuthState);
   }, []);
+
+  useEffect(() => {
+    return () => {
+      if (partnerProductImagePreviewUrl) {
+        URL.revokeObjectURL(partnerProductImagePreviewUrl);
+      }
+    };
+  }, [partnerProductImagePreviewUrl]);
 
   async function handleAdminLogin() {
     setIsAdminAuthSubmitting(true);
@@ -1169,11 +1182,20 @@ export function App() {
 
   async function handlePartnerProductSave() {
     setSavingPartnerProductId(editingPartnerProductId || 'new');
+    setUploadingPartnerProductImageId(partnerProductImageFile ? editingPartnerProductId || 'new' : '');
     setMarketplaceMessage('');
     setMarketplaceErrorMessage('');
 
     try {
-      const input = getPartnerProductInput(partnerProductForm);
+      let input = getPartnerProductInput(partnerProductForm);
+
+      if (partnerProductImageFile) {
+        const publicUrl = await uploadPartnerProductImage(input.partner_id, partnerProductImageFile);
+        input = {
+          ...input,
+          image_url: publicUrl,
+        };
+      }
 
       if (editingPartnerProductId) {
         await updatePartnerProduct(editingPartnerProductId, input);
@@ -1184,6 +1206,8 @@ export function App() {
       }
 
       setEditingPartnerProductId('');
+      setIsPreviewProductFormOpen(false);
+      clearPartnerProductImageFile();
       setPartnerProductForm(getEmptyPartnerProductFormForPartner(input.partner_id, businessPartners));
       await loadPartnerProducts(input.partner_id);
 
@@ -1194,7 +1218,18 @@ export function App() {
       setMarketplaceErrorMessage(`Unable to save partner product. ${getErrorMessage(error)}`);
     } finally {
       setSavingPartnerProductId('');
+      setUploadingPartnerProductImageId('');
     }
+  }
+
+  function handlePartnerProductImageFileChange(file: File | null) {
+    setPartnerProductImageFile(file);
+    setPartnerProductImagePreviewUrl(file ? URL.createObjectURL(file) : '');
+  }
+
+  function clearPartnerProductImageFile() {
+    setPartnerProductImageFile(null);
+    setPartnerProductImagePreviewUrl('');
   }
 
   async function handlePartnerProductAvailability(productId: string, isAvailable: boolean) {
@@ -2269,6 +2304,7 @@ export function App() {
                       const nextPartnerId = event.target.value;
                       setSelectedProductPartnerId(nextPartnerId);
                       setEditingPartnerProductId('');
+                      clearPartnerProductImageFile();
                       setPartnerProductForm(
                         getEmptyPartnerProductFormForPartner(nextPartnerId, businessPartners)
                       );
@@ -2299,6 +2335,7 @@ export function App() {
                         const nextPartnerId = event.target.value;
                         setSelectedProductPartnerId(nextPartnerId);
                         setEditingPartnerProductId('');
+                        clearPartnerProductImageFile();
                         setPartnerProductForm(
                           getEmptyPartnerProductFormForPartner(nextPartnerId, businessPartners)
                         );
@@ -2408,20 +2445,21 @@ export function App() {
                       }
                     />
                   </label>
-                  <label className="form-field">
-                    <span>Image URL</span>
-                    <input
-                      placeholder="https://example.com/product.jpg"
-                      type="url"
-                      value={partnerProductForm.imageUrl}
-                      onChange={(event) =>
-                        setPartnerProductForm((current) => ({
-                          ...current,
-                          imageUrl: event.target.value,
-                        }))
-                      }
-                    />
-                  </label>
+                  <PartnerProductImagePicker
+                    fileName={partnerProductImageFile?.name ?? ''}
+                    imageUrl={partnerProductImagePreviewUrl || partnerProductForm.imageUrl}
+                    inputValue={partnerProductForm.imageUrl}
+                    isUploading={Boolean(uploadingPartnerProductImageId)}
+                    label="Product image"
+                    onClearFile={clearPartnerProductImageFile}
+                    onFileChange={handlePartnerProductImageFileChange}
+                    onInputChange={(value) =>
+                      setPartnerProductForm((current) => ({
+                        ...current,
+                        imageUrl: value,
+                      }))
+                    }
+                  />
                   <label className="form-field wide-field">
                     <span>Description</span>
                     <textarea
@@ -2468,6 +2506,7 @@ export function App() {
                       type="button"
                       onClick={() => {
                         setEditingPartnerProductId('');
+                        clearPartnerProductImageFile();
                         setPartnerProductForm(
                           getEmptyPartnerProductFormForPartner(selectedProductPartnerId, businessPartners)
                         );
@@ -2494,23 +2533,26 @@ export function App() {
                   {partnerProducts.map((product) => (
                     <article className="entity-card" key={product.id}>
                       <div className="entity-card-header">
-                        <div>
-                          <h4>{product.name}</h4>
-                          <p className="entity-meta">
-                            {formatCurrency(Number(product.price))} - {product.unit_label || 'Item'} - Sort{' '}
-                            {product.sort_order}
-                          </p>
-                          <p className="entity-meta">
-                            {product.description || 'No description'}{' '}
-                            {product.sku ? `- SKU ${product.sku}` : ''}
-                          </p>
-                          <div className="status-row">
-                            <span className={product.is_active ? 'status-pill active' : 'status-pill'}>
-                              {product.is_active ? 'Active' : 'Inactive'}
-                            </span>
-                            <span className={product.is_available ? 'status-pill active' : 'status-pill'}>
-                              {product.is_available ? 'Available' : 'Unavailable'}
-                            </span>
+                        <div className="preview-product-main">
+                          <ImagePreview imageUrl={product.image_url} label={`${product.name} product`} />
+                          <div>
+                            <h4>{product.name}</h4>
+                            <p className="entity-meta">
+                              {formatCurrency(Number(product.price))} - {product.unit_label || 'Item'} - Sort{' '}
+                              {product.sort_order}
+                            </p>
+                            <p className="entity-meta">
+                              {product.description || 'No description'}{' '}
+                              {product.sku ? `- SKU ${product.sku}` : ''}
+                            </p>
+                            <div className="status-row">
+                              <span className={product.is_active ? 'status-pill active' : 'status-pill'}>
+                                {product.is_active ? 'Active' : 'Inactive'}
+                              </span>
+                              <span className={product.is_available ? 'status-pill active' : 'status-pill'}>
+                                {product.is_available ? 'Available' : 'Unavailable'}
+                              </span>
+                            </div>
                           </div>
                         </div>
                         <div className="action-row">
@@ -2520,6 +2562,7 @@ export function App() {
                             onClick={() => {
                               setEditingPartnerProductId(product.id);
                               setSelectedProductPartnerId(product.partner_id);
+                              clearPartnerProductImageFile();
                               setPartnerProductForm(getPartnerProductForm(product));
                             }}>
                             Edit
@@ -2699,40 +2742,268 @@ export function App() {
                           These products appear in the customer app when active and available.
                         </p>
                       </div>
-                      <span className="count-pill">{previewPartnerProducts.length} products</span>
+                      <div className="action-row">
+                        <span className="count-pill">{previewPartnerProducts.length} products</span>
+                        <button
+                          className="primary-action-button"
+                          type="button"
+                          onClick={() => {
+                            setSelectedProductPartnerId(previewPartner.id);
+                            setEditingPartnerProductId('');
+                            clearPartnerProductImageFile();
+                            setPartnerProductForm(
+                              getEmptyPartnerProductFormForPartner(previewPartner.id, businessPartners)
+                            );
+                            setIsPreviewProductFormOpen(true);
+                          }}>
+                          Add Product
+                        </button>
+                      </div>
                     </div>
+                    {isPreviewProductFormOpen ? (
+                      <form
+                        className="management-form partner-product-preview-form"
+                        onSubmit={(event) => {
+                          event.preventDefault();
+                          void handlePartnerProductSave();
+                        }}>
+                        <div className="section-title-row">
+                          <div>
+                            <h4>{editingPartnerProductId ? 'Edit product' : 'Add product'}</h4>
+                            <p className="entity-meta">
+                              Product details saved here appear in this partner shop after refresh.
+                            </p>
+                          </div>
+                          <button
+                            className="secondary-button"
+                            type="button"
+                            onClick={() => {
+                              setEditingPartnerProductId('');
+                              setIsPreviewProductFormOpen(false);
+                              clearPartnerProductImageFile();
+                              setPartnerProductForm(
+                                getEmptyPartnerProductFormForPartner(previewPartner.id, businessPartners)
+                              );
+                            }}>
+                            Cancel
+                          </button>
+                        </div>
+                        <div className="form-grid">
+                          <label className="form-field">
+                            <span>Product name</span>
+                            <input
+                              required
+                              type="text"
+                              value={partnerProductForm.name}
+                              onChange={(event) =>
+                                setPartnerProductForm((current) => ({
+                                  ...current,
+                                  name: event.target.value,
+                                }))
+                              }
+                            />
+                          </label>
+                          <label className="form-field">
+                            <span>Price</span>
+                            <input
+                              min="0"
+                              required
+                              step="0.01"
+                              type="number"
+                              value={partnerProductForm.price}
+                              onChange={(event) =>
+                                setPartnerProductForm((current) => ({
+                                  ...current,
+                                  price: event.target.value,
+                                }))
+                              }
+                            />
+                          </label>
+                          <label className="form-field">
+                            <span>Unit label</span>
+                            <input
+                              placeholder="piece, bottle, pack"
+                              type="text"
+                              value={partnerProductForm.unitLabel}
+                              onChange={(event) =>
+                                setPartnerProductForm((current) => ({
+                                  ...current,
+                                  unitLabel: event.target.value,
+                                }))
+                              }
+                            />
+                          </label>
+                          <label className="form-field">
+                            <span>Category</span>
+                            <select
+                              value={partnerProductForm.categoryId}
+                              onChange={(event) =>
+                                setPartnerProductForm((current) => ({
+                                  ...current,
+                                  categoryId: event.target.value,
+                                  subcategoryId: '',
+                                }))
+                              }>
+                              <option value="">Use partner category</option>
+                              {serviceCategories.map((category) => (
+                                <option key={category.id} value={category.id}>
+                                  {category.name}
+                                </option>
+                              ))}
+                            </select>
+                          </label>
+                          <label className="form-field">
+                            <span>Sub-category</span>
+                            <select
+                              value={partnerProductForm.subcategoryId}
+                              onChange={(event) =>
+                                setPartnerProductForm((current) => ({
+                                  ...current,
+                                  subcategoryId: event.target.value,
+                                }))
+                              }>
+                              <option value="">Use partner sub-category</option>
+                              {partnerProductFormSubcategories.map((subcategory) => (
+                                <option key={subcategory.id} value={subcategory.id}>
+                                  {subcategory.name}
+                                </option>
+                              ))}
+                            </select>
+                          </label>
+                          <label className="form-field">
+                            <span>SKU</span>
+                            <input
+                              type="text"
+                              value={partnerProductForm.sku}
+                              onChange={(event) =>
+                                setPartnerProductForm((current) => ({
+                                  ...current,
+                                  sku: event.target.value,
+                                }))
+                              }
+                            />
+                          </label>
+                          <PartnerProductImagePicker
+                            fileName={partnerProductImageFile?.name ?? ''}
+                            imageUrl={partnerProductImagePreviewUrl || partnerProductForm.imageUrl}
+                            inputValue={partnerProductForm.imageUrl}
+                            isUploading={Boolean(uploadingPartnerProductImageId)}
+                            label="Product image"
+                            onClearFile={clearPartnerProductImageFile}
+                            onFileChange={handlePartnerProductImageFileChange}
+                            onInputChange={(value) =>
+                              setPartnerProductForm((current) => ({
+                                ...current,
+                                imageUrl: value,
+                              }))
+                            }
+                          />
+                          <label className="form-field wide-field">
+                            <span>Description</span>
+                            <textarea
+                              value={partnerProductForm.description}
+                              onChange={(event) =>
+                                setPartnerProductForm((current) => ({
+                                  ...current,
+                                  description: event.target.value,
+                                }))
+                              }
+                            />
+                          </label>
+                        </div>
+                        <label className="checkbox-field">
+                          <input
+                            checked={partnerProductForm.isAvailable}
+                            type="checkbox"
+                            onChange={(event) =>
+                              setPartnerProductForm((current) => ({
+                                ...current,
+                                isAvailable: event.target.checked,
+                              }))
+                            }
+                          />
+                          <span>Product is available</span>
+                        </label>
+                        <label className="checkbox-field">
+                          <input
+                            checked={partnerProductForm.isActive}
+                            type="checkbox"
+                            onChange={(event) =>
+                              setPartnerProductForm((current) => ({
+                                ...current,
+                                isActive: event.target.checked,
+                              }))
+                            }
+                          />
+                          <span>Product is active</span>
+                        </label>
+                        <button
+                          className="primary-action-button"
+                          disabled={isPartnerProductSaving}
+                          type="submit">
+                          {isPartnerProductSaving
+                            ? 'Saving...'
+                            : editingPartnerProductId
+                              ? 'Update product'
+                              : 'Save product'}
+                        </button>
+                      </form>
+                    ) : null}
                     {previewPartnerProducts.length === 0 ? (
                       <p className="empty-state">No products added for this partner yet.</p>
                     ) : (
                       <div className="entity-list compact-entity-grid">
                         {previewPartnerProducts.map((product) => (
                           <article className="preview-product-card" key={product.id}>
-                            <div>
-                              <h4>{product.name}</h4>
-                              <p className="entity-meta">
-                                {formatCurrency(Number(product.price))} - {product.unit_label || 'Item'}
-                              </p>
-                              <p className="entity-meta">{product.description || 'No description'}</p>
-                              <div className="status-row">
-                                <span className={product.is_active ? 'status-pill active' : 'status-pill'}>
-                                  {product.is_active ? 'Active' : 'Inactive'}
-                                </span>
-                                <span
-                                  className={product.is_available ? 'status-pill active' : 'status-pill'}>
-                                  {product.is_available ? 'Available' : 'Unavailable'}
-                                </span>
+                            <div className="preview-product-main">
+                              <ImagePreview imageUrl={product.image_url} label={`${product.name} product`} />
+                              <div>
+                                <h4>{product.name}</h4>
+                                <p className="entity-meta">
+                                  {formatCurrency(Number(product.price))} - {product.unit_label || 'Item'}
+                                </p>
+                                <p className="entity-meta">{product.description || 'No description'}</p>
+                                <div className="status-row">
+                                  <span className={product.is_active ? 'status-pill active' : 'status-pill'}>
+                                    {product.is_active ? 'Active' : 'Inactive'}
+                                  </span>
+                                  <span
+                                    className={product.is_available ? 'status-pill active' : 'status-pill'}>
+                                    {product.is_available ? 'Available' : 'Unavailable'}
+                                  </span>
+                                </div>
                               </div>
                             </div>
-                            <button
-                              className="secondary-button"
-                              type="button"
-                              onClick={() => {
-                                setSelectedProductPartnerId(product.partner_id);
-                                setEditingPartnerProductId(product.id);
-                                setPartnerProductForm(getPartnerProductForm(product));
-                              }}>
-                              Edit
-                            </button>
+                            <div className="action-row">
+                              <button
+                                className="secondary-button"
+                                type="button"
+                                onClick={() => {
+                                  setSelectedProductPartnerId(product.partner_id);
+                                  setEditingPartnerProductId(product.id);
+                                  clearPartnerProductImageFile();
+                                  setPartnerProductForm(getPartnerProductForm(product));
+                                  setIsPreviewProductFormOpen(true);
+                                }}>
+                                Edit
+                              </button>
+                              <button
+                                className="secondary-button"
+                                disabled={savingPartnerProductId === product.id}
+                                type="button"
+                                onClick={() =>
+                                  void handlePartnerProductAvailability(product.id, !product.is_available)
+                                }>
+                                {product.is_available ? 'Unavailable' : 'Available'}
+                              </button>
+                              <button
+                                className="secondary-button"
+                                disabled={!product.is_active || savingPartnerProductId === product.id}
+                                type="button"
+                                onClick={() => void handlePartnerProductDeactivate(product.id)}>
+                                Deactivate
+                              </button>
+                            </div>
                           </article>
                         ))}
                       </div>
@@ -4569,6 +4840,68 @@ function ImageEditorRow({
         {isSaving ? 'Saving...' : 'Save'}
       </button>
     </article>
+  );
+}
+
+type PartnerProductImagePickerProps = {
+  fileName: string;
+  imageUrl: string;
+  inputValue: string;
+  isUploading: boolean;
+  label: string;
+  onClearFile: () => void;
+  onFileChange: (file: File | null) => void;
+  onInputChange: (value: string) => void;
+};
+
+function PartnerProductImagePicker({
+  fileName,
+  imageUrl,
+  inputValue,
+  isUploading,
+  label,
+  onClearFile,
+  onFileChange,
+  onInputChange,
+}: PartnerProductImagePickerProps) {
+  return (
+    <div className="partner-product-image-picker wide-field">
+      <ImagePreview key={imageUrl || 'partner-product-placeholder'} imageUrl={imageUrl} label={label} />
+      <div className="image-editor-copy">
+        <label className="form-field">
+          <span>Image URL fallback</span>
+          <input
+            placeholder="https://example.com/product.jpg"
+            type="url"
+            value={inputValue}
+            onChange={(event) => onInputChange(event.target.value)}
+          />
+        </label>
+        <div className="product-upload-row">
+          <label className="upload-control">
+            <span>{isUploading ? 'Uploading...' : 'Upload Image'}</span>
+            <input
+              accept="image/*"
+              disabled={isUploading}
+              type="file"
+              onChange={(event) => {
+                const selectedFile = event.target.files?.[0] ?? null;
+                event.target.value = '';
+                onFileChange(selectedFile);
+              }}
+            />
+          </label>
+          {fileName ? (
+            <>
+              <span className="entity-meta">{fileName}</span>
+              <button className="secondary-button" type="button" onClick={onClearFile}>
+                Clear file
+              </button>
+            </>
+          ) : null}
+        </div>
+      </div>
+    </div>
   );
 }
 
