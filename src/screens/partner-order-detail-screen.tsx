@@ -8,11 +8,20 @@ import { PrimaryButton } from '@/components/primary-button';
 import { ScreenHeader } from '@/components/screen-header';
 import { BrandColors } from '@/constants/brand';
 import {
+  getSafeGoogleMapsSearchUrl,
+  openGoogleMapsUrlDirect,
+  type LocationPoint,
+} from '@/services/location-service';
+import {
   getPartnerOrderById,
   getPartnerOrderItems,
   type PartnerOrderItem,
   type PartnerOrderWithPartner,
 } from '@/services/partner-order-service';
+import {
+  getLatestRiderLocationForPartnerOrder,
+  type RiderLocation,
+} from '@/services/rider-location-service';
 import type { PartnerOrderStatus } from '@/types/database';
 
 type PartnerOrderDetailScreenProps = {
@@ -31,6 +40,7 @@ const partnerTimelineStatuses: PartnerOrderStatus[] = [
 export function PartnerOrderDetailScreen({ orderId }: PartnerOrderDetailScreenProps) {
   const [order, setOrder] = useState<PartnerOrderWithPartner | null>(null);
   const [items, setItems] = useState<PartnerOrderItem[]>([]);
+  const [riderLocation, setRiderLocation] = useState<RiderLocation | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [message, setMessage] = useState('');
 
@@ -43,9 +53,11 @@ export function PartnerOrderDetailScreen({ orderId }: PartnerOrderDetailScreenPr
     try {
       const nextOrder = await getPartnerOrderById(orderId);
       const nextItems = await getPartnerOrderItems(orderId);
+      const nextRiderLocation = await getLatestRiderLocationForPartnerOrder(orderId).catch(() => null);
 
       setOrder(nextOrder);
       setItems(nextItems);
+      setRiderLocation(nextRiderLocation);
       setMessage(nextOrder ? '' : 'Order details may take a moment to appear.');
     } catch (error) {
       if (__DEV__) {
@@ -54,6 +66,7 @@ export function PartnerOrderDetailScreen({ orderId }: PartnerOrderDetailScreenPr
 
       setOrder(null);
       setItems([]);
+      setRiderLocation(null);
       setMessage('Order details may take a moment to appear.');
     } finally {
       if (showLoading) {
@@ -91,6 +104,7 @@ export function PartnerOrderDetailScreen({ orderId }: PartnerOrderDetailScreenPr
   }
 
   const currentStatus = order?.status ?? 'pending';
+  const riderPoint = getLocationPoint(riderLocation?.latitude, riderLocation?.longitude);
 
   return (
     <AppScreen>
@@ -126,6 +140,25 @@ export function PartnerOrderDetailScreen({ orderId }: PartnerOrderDetailScreenPr
         <DetailRow label="Payment" value={toTitleCase(order?.payment_method ?? 'cash')} />
         <DetailRow label="Assigned rider" value={order?.assigned_rider_id ? 'Assigned' : 'Unassigned'} />
         <DetailRow label="Total" value={formatCurrency(Number(order?.total_amount ?? 0))} />
+      </DetailCard>
+
+      <DetailCard title="Rider Tracking">
+        {riderPoint ? (
+          <>
+            <DetailRow label="Rider latitude" value={riderPoint.latitude.toFixed(6)} />
+            <DetailRow label="Rider longitude" value={riderPoint.longitude.toFixed(6)} />
+            <DetailRow label="Last updated" value={formatDateTime(riderLocation?.updated_at)} />
+            <PrimaryButton
+              title="Open Rider Location"
+              variant="secondary"
+              onPress={() => void openRiderLocationMap(riderPoint)}
+            />
+          </>
+        ) : (
+          <Text style={styles.emptyText}>
+            Rider tracking will appear once the rider starts delivery.
+          </Text>
+        )}
       </DetailCard>
 
       <DetailCard title="Items">
@@ -274,6 +307,48 @@ function formatCurrency(value: number) {
     maximumFractionDigits: 0,
     style: 'currency',
   }).format(value);
+}
+
+function getLocationPoint(
+  latitude: number | null | undefined,
+  longitude: number | null | undefined
+): LocationPoint | null {
+  if (typeof latitude !== 'number' || typeof longitude !== 'number') {
+    return null;
+  }
+
+  if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
+    return null;
+  }
+
+  return { latitude, longitude };
+}
+
+async function openRiderLocationMap(riderPoint: LocationPoint) {
+  const url = getSafeGoogleMapsSearchUrl(riderPoint);
+
+  if (!url) {
+    return;
+  }
+
+  await openGoogleMapsUrlDirect(url);
+}
+
+function formatDateTime(value: string | null | undefined) {
+  if (!value) {
+    return 'Recently';
+  }
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return 'Recently';
+  }
+
+  return date.toLocaleString('en-PH', {
+    dateStyle: 'medium',
+    timeStyle: 'short',
+  });
 }
 
 const styles = StyleSheet.create({

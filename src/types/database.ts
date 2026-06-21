@@ -128,6 +128,7 @@ export type Database = {
           id: string;
           latitude: number;
           longitude: number;
+          partner_order_id: string | null;
           rider_id: string;
           speed: number | null;
           updated_at: string;
@@ -139,6 +140,7 @@ export type Database = {
           id?: string;
           latitude: number;
           longitude: number;
+          partner_order_id?: string | null;
           rider_id: string;
           speed?: number | null;
           updated_at?: string;
@@ -150,6 +152,7 @@ export type Database = {
           id?: string;
           latitude?: number;
           longitude?: number;
+          partner_order_id?: string | null;
           rider_id?: string;
           speed?: number | null;
           updated_at?: string;
@@ -165,6 +168,12 @@ export type Database = {
             foreignKeyName: 'rider_locations_food_order_id_fkey';
             columns: ['food_order_id'];
             referencedRelation: 'food_orders';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'rider_locations_partner_order_id_fkey';
+            columns: ['partner_order_id'];
+            referencedRelation: 'partner_orders';
             referencedColumns: ['id'];
           },
           {
@@ -1310,10 +1319,24 @@ export type Database = {
         };
         Returns: Json;
       };
+      get_assigned_partner_orders_for_rider: {
+        Args: {
+          target_rider_id: string;
+        };
+        Returns: Json;
+      };
       get_partner_order_by_tracking_token: {
         Args: {
           p_order_id: string;
           p_tracking_token: string;
+        };
+        Returns: Json;
+      };
+      update_partner_order_status_for_rider: {
+        Args: {
+          next_status: string;
+          target_partner_order_id: string;
+          target_rider_id: string;
         };
         Returns: Json;
       };

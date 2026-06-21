@@ -27,11 +27,13 @@ import { subscribeToAssignedFoodOrdersForRider } from '@/services/realtime-servi
 import {
   publishCurrentRiderFoodOrderLocation,
   publishCurrentRiderLocation,
+  publishCurrentRiderPartnerOrderLocation,
   requestRiderLocationPermission,
 } from '@/services/rider-location-service';
 import { hasSupabaseConfig } from '@/services/supabase';
 import {
   fallbackRiderFoodOrders,
+  fallbackRiderPartnerOrders,
   fallbackRider,
   fallbackRiderJobs,
   getAuthenticatedRiderJobs,
@@ -43,11 +45,13 @@ import {
   updateRiderAvailability,
   updateRiderFoodOrderStatus,
   updateRiderJobStatus,
+  updateRiderPartnerOrderStatus,
+  type RiderPartnerOrder,
   type Rider,
 } from '@/services/rider-service';
 import type { Booking } from '@/services/booking-service';
 import type { FoodOrderWithRestaurant } from '@/services/food-order-service';
-import type { BookingStatus, FoodOrderStatus } from '@/types/database';
+import type { BookingStatus, FoodOrderStatus, PartnerOrderStatus } from '@/types/database';
 
 const riderStatuses: BookingStatus[] = [
   'accepted',
@@ -63,11 +67,22 @@ const foodOrderStatuses: FoodOrderStatus[] = [
   'on_the_way',
   'delivered',
 ];
+const partnerOrderStatuses: Extract<PartnerOrderStatus, 'accepted' | 'picked_up' | 'on_the_way' | 'completed'>[] = [
+  'accepted',
+  'picked_up',
+  'on_the_way',
+  'completed',
+];
 
 const liveLocationStatuses: BookingStatus[] = ['accepted', 'runner_arriving', 'in_progress'];
 const foodLiveLocationStatuses: FoodOrderStatus[] = [
   'accepted',
   'preparing',
+  'picked_up',
+  'on_the_way',
+];
+const partnerLiveLocationStatuses: PartnerOrderStatus[] = [
+  'accepted',
   'picked_up',
   'on_the_way',
 ];
@@ -77,6 +92,7 @@ type RiderJobFilter =
   | 'active'
   | 'ride'
   | 'food'
+  | 'partner'
   | 'accepted'
   | 'moving'
   | 'completed';
@@ -86,6 +102,7 @@ const riderJobFilters: { label: string; value: RiderJobFilter }[] = [
   { label: 'Active', value: 'active' },
   { label: 'Ride', value: 'ride' },
   { label: 'Food', value: 'food' },
+  { label: 'Partner', value: 'partner' },
   { label: 'Accepted', value: 'accepted' },
   { label: 'On the Way / In Progress', value: 'moving' },
   { label: 'Completed', value: 'completed' },
@@ -94,6 +111,7 @@ const riderJobFilters: { label: string; value: RiderJobFilter }[] = [
 type ActiveLiveLocationTarget =
   | { id: string; kind: 'booking' }
   | { id: string; kind: 'food_order' }
+  | { id: string; kind: 'partner_order' }
   | null;
 
 type UnifiedRiderJob =
@@ -108,6 +126,13 @@ type UnifiedRiderJob =
       foodOrder: FoodOrderWithRestaurant;
       id: string;
       kind: 'food';
+      priority: number;
+      updatedAt: string;
+    }
+  | {
+      id: string;
+      kind: 'partner';
+      partnerOrder: RiderPartnerOrder;
       priority: number;
       updatedAt: string;
     };
@@ -125,6 +150,7 @@ export function RiderScreen() {
   const [rider, setRider] = useState<Rider>(fallbackRider);
   const [jobs, setJobs] = useState<Booking[]>(fallbackRiderJobs);
   const [foodOrders, setFoodOrders] = useState<FoodOrderWithRestaurant[]>(fallbackRiderFoodOrders);
+  const [partnerOrders, setPartnerOrders] = useState<RiderPartnerOrder[]>(fallbackRiderPartnerOrders);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(hasSupabaseConfig);
@@ -133,6 +159,7 @@ export function RiderScreen() {
   const [isUpdatingAvailability, setIsUpdatingAvailability] = useState(false);
   const [updatingJobId, setUpdatingJobId] = useState<string | null>(null);
   const [updatingFoodOrderId, setUpdatingFoodOrderId] = useState<string | null>(null);
+  const [updatingPartnerOrderId, setUpdatingPartnerOrderId] = useState<string | null>(null);
   const [isSharingLiveLocation, setIsSharingLiveLocation] = useState(false);
   const [riderJobFilter, setRiderJobFilter] = useState<RiderJobFilter>('active');
   const [riderManuallyDisabledLocationTarget, setRiderManuallyDisabledLocationTarget] = useState<string | null>(null);
@@ -150,7 +177,7 @@ export function RiderScreen() {
         setIsLoading(false);
       }
       setIsFallbackMode(true);
-      setMessage('Live rider jobs and food orders are temporarily unavailable. Showing sample assigned work.');
+      setMessage('Live rider jobs and deliveries are temporarily unavailable. Showing sample assigned work.');
       return;
     }
 
@@ -165,6 +192,7 @@ export function RiderScreen() {
       setRider(liveData.rider);
       setJobs(liveData.jobs);
       setFoodOrders(liveData.foodOrders);
+      setPartnerOrders(liveData.partnerOrders);
       setMessage(authState.user ? 'Signed in rider profile loaded.' : '');
       setIsFallbackMode(false);
       setCanLinkRider(false);
@@ -172,6 +200,7 @@ export function RiderScreen() {
       setRider(fallbackRider);
       setJobs(fallbackRiderJobs);
       setFoodOrders(fallbackRiderFoodOrders);
+      setPartnerOrders(fallbackRiderPartnerOrders);
       setIsFallbackMode(true);
 
       if (authState.user && error instanceof RiderNotFoundError) {
@@ -181,7 +210,7 @@ export function RiderScreen() {
         );
       } else {
         setCanLinkRider(false);
-        setMessage('Live rider jobs and food orders are temporarily unavailable. Showing sample assigned work.');
+        setMessage('Live rider jobs and deliveries are temporarily unavailable. Showing sample assigned work.');
       }
     } finally {
       if (showLoading) {
@@ -237,6 +266,7 @@ export function RiderScreen() {
       setRider(fallbackRider);
       setJobs(fallbackRiderJobs);
       setFoodOrders(fallbackRiderFoodOrders);
+      setPartnerOrders(fallbackRiderPartnerOrders);
       setIsFallbackMode(!hasSupabaseConfig);
       setMessage('Signed out. Guest rider mode is available.');
     } catch {
@@ -286,20 +316,20 @@ export function RiderScreen() {
       return undefined;
     }
 
-    function refreshAssignedFoodOrders() {
+    function refreshAssignedJobs() {
       void loadJobs({ showLoading: false });
     }
 
     const unsubscribe = subscribeToAssignedFoodOrdersForRider(
       rider.id,
-      refreshAssignedFoodOrders,
+      refreshAssignedJobs,
       () => {
         setMessage(
-          'Food delivery realtime updates are temporarily unavailable. Rider Mode will keep polling.'
+          'Delivery realtime updates are temporarily unavailable. Rider Mode will keep polling.'
         );
       }
     );
-    const interval = setInterval(refreshAssignedFoodOrders, 5000);
+    const interval = setInterval(refreshAssignedJobs, 5000);
 
     return () => {
       unsubscribe();
@@ -310,11 +340,18 @@ export function RiderScreen() {
   const riderRole = getUserRole(authState.user, authState.profile);
 
   const activeJobsCount = useMemo(
-    () => jobs.filter((job) => job.status !== 'completed' && job.status !== 'cancelled').length,
-    [jobs]
+    () =>
+      jobs.filter((job) => job.status !== 'completed' && job.status !== 'cancelled').length +
+      foodOrders.filter((foodOrder) => (
+        foodOrder.status !== 'delivered' && foodOrder.status !== 'cancelled'
+      )).length +
+      partnerOrders.filter((partnerOrder) => (
+        partnerOrder.status !== 'completed' && partnerOrder.status !== 'cancelled'
+      )).length,
+    [foodOrders, jobs, partnerOrders]
   );
   const sortedRiderJobs = useMemo(() => {
-    const nextJobs = sortRiderJobs(createUnifiedRiderJobs(jobs, foodOrders));
+    const nextJobs = sortRiderJobs(createUnifiedRiderJobs(jobs, foodOrders, partnerOrders));
 
     console.log('RIDER_JOB_SORT_APPLIED', {
       totalJobs: nextJobs.length,
@@ -327,7 +364,7 @@ export function RiderScreen() {
     })));
 
     return nextJobs;
-  }, [foodOrders, jobs]);
+  }, [foodOrders, jobs, partnerOrders]);
   const filteredRiderJobs = useMemo(
     () => sortedRiderJobs.filter((job) => matchesRiderJobFilter(job, riderJobFilter)),
     [riderJobFilter, sortedRiderJobs]
@@ -336,7 +373,9 @@ export function RiderScreen() {
     const activeJob = sortedRiderJobs.find((job) => (
       job.kind === 'ride'
         ? liveLocationStatuses.includes(job.ride.status)
-        : foodLiveLocationStatuses.includes(job.foodOrder.status)
+        : job.kind === 'food'
+          ? foodLiveLocationStatuses.includes(job.foodOrder.status)
+          : partnerLiveLocationStatuses.includes(job.partnerOrder.status)
     ));
 
     if (!activeJob) {
@@ -345,27 +384,40 @@ export function RiderScreen() {
 
     return {
       id: activeJob.id,
-      kind: activeJob.kind === 'ride' ? 'booking' : 'food_order',
+      kind:
+        activeJob.kind === 'ride'
+          ? 'booking'
+          : activeJob.kind === 'food'
+            ? 'food_order'
+            : 'partner_order',
     };
   }, [sortedRiderJobs]);
   const isLiveLocationToggleOn = isSharingLiveLocation && Boolean(activeLiveLocationTarget);
   const completedJobsCount = useMemo(
-    () => jobs.filter((job) => job.status === 'completed').length,
-    [jobs]
+    () =>
+      jobs.filter((job) => job.status === 'completed').length +
+      partnerOrders.filter((partnerOrder) => partnerOrder.status === 'completed').length,
+    [jobs, partnerOrders]
   );
   const activeDeliveriesCount = useMemo(
     () =>
       foodOrders.filter((foodOrder) => (
         foodOrder.status !== 'delivered' && foodOrder.status !== 'cancelled'
+      )).length +
+      partnerOrders.filter((partnerOrder) => (
+        partnerOrder.status !== 'completed' && partnerOrder.status !== 'cancelled'
       )).length,
-    [foodOrders]
+    [foodOrders, partnerOrders]
   );
   const deliveredTodayCount = useMemo(
     () =>
       foodOrders.filter((foodOrder) => (
         foodOrder.status === 'delivered' && isToday(foodOrder.updated_at)
+      )).length +
+      partnerOrders.filter((partnerOrder) => (
+        partnerOrder.status === 'completed' && isToday(partnerOrder.updated_at)
       )).length,
-    [foodOrders]
+    [foodOrders, partnerOrders]
   );
 
   async function handleAvailabilityChange(nextValue: boolean) {
@@ -419,7 +471,7 @@ export function RiderScreen() {
 
     if (!activeLiveLocationTarget) {
       setLiveLocationMessage(
-        'Live location starts when you have an accepted active ride or food delivery.'
+        'Live location starts when you have an accepted active ride, food delivery, or partner order.'
       );
       return;
     }
@@ -536,8 +588,10 @@ export function RiderScreen() {
       try {
         if (activeTarget.kind === 'booking') {
           await publishCurrentRiderLocation(rider.id, activeTarget.id);
-        } else {
+        } else if (activeTarget.kind === 'food_order') {
           await publishCurrentRiderFoodOrderLocation(rider.id, activeTarget.id);
+        } else {
+          await publishCurrentRiderPartnerOrderLocation(rider.id, activeTarget.id);
         }
 
         if (isMounted) {
@@ -641,6 +695,69 @@ export function RiderScreen() {
       setMessage('We could not update this food delivery right now. Please try again.');
     } finally {
       setUpdatingFoodOrderId(null);
+    }
+  }
+
+  async function handlePartnerOrderStatusChange(
+    partnerOrder: RiderPartnerOrder,
+    status: Extract<PartnerOrderStatus, 'accepted' | 'picked_up' | 'on_the_way' | 'completed'>
+  ) {
+    if (updatingPartnerOrderId || partnerOrder.status === status) {
+      return;
+    }
+
+    const previousPartnerOrders = partnerOrders;
+    setPartnerOrders((currentPartnerOrders) =>
+      currentPartnerOrders.map((currentPartnerOrder) =>
+        currentPartnerOrder.id === partnerOrder.id
+          ? {
+              ...currentPartnerOrder,
+              rider_status: status,
+              status,
+              updated_at: new Date().toISOString(),
+            }
+          : currentPartnerOrder
+      )
+    );
+
+    if (isFallbackMode) {
+      return;
+    }
+
+    setUpdatingPartnerOrderId(partnerOrder.id);
+    setMessage('');
+
+    try {
+      const updatedPartnerOrder = await updateRiderPartnerOrderStatus(
+        partnerOrder.id,
+        rider.id,
+        status
+      );
+      setPartnerOrders((currentPartnerOrders) =>
+        currentPartnerOrders.map((currentPartnerOrder) =>
+          currentPartnerOrder.id === partnerOrder.id
+            ? {
+                ...currentPartnerOrder,
+                ...updatedPartnerOrder,
+                items: currentPartnerOrder.items,
+                partner_address: currentPartnerOrder.partner_address,
+                partner_latitude: currentPartnerOrder.partner_latitude,
+                partner_longitude: currentPartnerOrder.partner_longitude,
+                partner_name: currentPartnerOrder.partner_name,
+              }
+            : currentPartnerOrder
+        )
+      );
+    } catch (error) {
+      console.error('Failed to update rider partner order status', {
+        error,
+        partnerOrderId: partnerOrder.id,
+        status,
+      });
+      setPartnerOrders(previousPartnerOrders);
+      setMessage('We could not update this partner order right now. Please try again.');
+    } finally {
+      setUpdatingPartnerOrderId(null);
     }
   }
 
@@ -763,8 +880,8 @@ export function RiderScreen() {
             </Text>
             <Text style={styles.onlineHint}>
               {activeLiveLocationTarget
-                ? `Active ${activeLiveLocationTarget.kind === 'booking' ? 'ride' : 'food'} ${activeLiveLocationTarget.id.slice(0, 8)}`
-                : 'Starts when a ride or food job is active'}
+                ? `Active ${getLiveLocationTargetLabel(activeLiveLocationTarget)} ${activeLiveLocationTarget.id.slice(0, 8)}`
+                : 'Starts when a ride, food, or partner job is active'}
             </Text>
           </View>
           <Switch
@@ -789,7 +906,7 @@ export function RiderScreen() {
 
       <InfoCard
         title="Assigned Jobs"
-        subtitle={isLoading ? 'Loading rider assignments...' : 'Ride bookings and food deliveries assigned to Juan.'}>
+        subtitle={isLoading ? 'Loading rider assignments...' : 'Ride bookings, food deliveries, and partner orders assigned to Juan.'}>
         <View style={styles.filterChips}>
           {riderJobFilters.map((filter) => {
             const isSelected = riderJobFilter === filter.value;
@@ -825,7 +942,7 @@ export function RiderScreen() {
                   key={`ride-${job.id}`}
                   onStatusChange={handleStatusChange}
                 />
-              ) : (
+              ) : job.kind === 'food' ? (
                 <FoodOrderCard
                   foodOrder={job.foodOrder}
                   isFallbackMode={isFallbackMode}
@@ -833,6 +950,14 @@ export function RiderScreen() {
                   key={`food-${job.id}`}
                   onBackHome={handleFoodTrackingBackHome}
                   onStatusChange={handleFoodOrderStatusChange}
+                />
+              ) : (
+                <PartnerOrderCard
+                  isFallbackMode={isFallbackMode}
+                  isUpdating={updatingPartnerOrderId === job.partnerOrder.id}
+                  key={`partner-${job.id}`}
+                  partnerOrder={job.partnerOrder}
+                  onStatusChange={handlePartnerOrderStatusChange}
                 />
               )
             ))
@@ -1047,6 +1172,119 @@ function FoodOrderCard({
   );
 }
 
+type PartnerOrderCardProps = {
+  isFallbackMode: boolean;
+  isUpdating: boolean;
+  onStatusChange: (
+    partnerOrder: RiderPartnerOrder,
+    status: Extract<PartnerOrderStatus, 'accepted' | 'picked_up' | 'on_the_way' | 'completed'>
+  ) => void;
+  partnerOrder: RiderPartnerOrder;
+};
+
+function PartnerOrderCard({
+  isFallbackMode,
+  isUpdating,
+  onStatusChange,
+  partnerOrder,
+}: PartnerOrderCardProps) {
+  const statusColor = getPartnerOrderStatusColor(partnerOrder.status);
+  const pickupPoint = getLocationPoint(partnerOrder.partner_latitude, partnerOrder.partner_longitude);
+  const deliveryPoint = getLocationPoint(partnerOrder.delivery_lat, partnerOrder.delivery_lng);
+  const itemSummary = getPartnerOrderItemSummary(partnerOrder);
+  const pickupAddress = partnerOrder.partner_address ?? partnerOrder.partner_name;
+  const deliveryAddress = partnerOrder.delivery_address ?? 'Delivery address to be confirmed';
+
+  return (
+    <View style={styles.jobCard}>
+      <View style={styles.jobHeader}>
+        <View style={styles.jobTitleBlock}>
+          <Text style={styles.serviceType}>{partnerOrder.partner_name}</Text>
+          <Text style={styles.jobId}>
+            {isFallbackMode ? 'Sample partner order' : `Partner order ${partnerOrder.id.slice(0, 8)}`}
+          </Text>
+        </View>
+        <View style={[styles.statusBadge, { backgroundColor: `${statusColor}1F` }]}>
+          <Text style={[styles.statusBadgeText, { color: statusColor }]}>
+            {toPartnerOrderStatusLabel(partnerOrder.status)}
+          </Text>
+        </View>
+      </View>
+
+      <View style={styles.details}>
+        <DetailRow label="Type" value="Partner Order" />
+        <DetailRow label="Customer" value={partnerOrder.customer_name ?? 'Customer'} />
+        <DetailRow label="Phone" value={partnerOrder.customer_phone ?? 'No phone'} />
+        <DetailRow label="Pickup" value={pickupAddress} />
+        <DetailRow label="Delivery" value={deliveryAddress} />
+        <DetailRow label="Items" value={itemSummary} />
+        <DetailRow label="Total" value={formatFare(partnerOrder.total_amount)} />
+        <DetailRow label="Payment" value={toTitleCase(partnerOrder.payment_method)} />
+        <DetailRow label="Status" value={toPartnerOrderStatusLabel(partnerOrder.status)} />
+        {partnerOrder.notes ? <DetailRow label="Notes" value={partnerOrder.notes} /> : null}
+      </View>
+
+      <View style={styles.mapActions}>
+        {canOpenMapSearch(pickupPoint, pickupAddress) ? (
+          <MapButton
+            title="Open Pickup Location"
+            onPress={() =>
+              void openRiderSearchMap({
+                fallbackQuery: pickupAddress,
+                logName: 'RIDER_OPEN_PICKUP_MAP_REQUEST',
+                point: pickupPoint,
+              })
+            }
+          />
+        ) : null}
+        {canOpenMapSearch(deliveryPoint, deliveryAddress) ? (
+          <MapButton
+            title="Open Delivery Location"
+            onPress={() =>
+              void openRiderSearchMap({
+                fallbackQuery: deliveryAddress,
+                logName: 'RIDER_OPEN_DESTINATION_MAP_REQUEST',
+                point: deliveryPoint,
+              })
+            }
+          />
+        ) : null}
+        {pickupPoint && deliveryPoint ? (
+          <MapButton
+            title="Open Route"
+            onPress={() => void openRiderRouteMap(pickupPoint, deliveryPoint)}
+          />
+        ) : null}
+      </View>
+
+      <View style={styles.statusActions}>
+        {partnerOrderStatuses.map((status) => {
+          const isSelected = partnerOrder.status === status;
+
+          return (
+            <Pressable
+              accessibilityRole="button"
+              disabled={isUpdating}
+              key={status}
+              style={({ pressed }) => [
+                styles.statusButton,
+                isSelected && styles.selectedStatusButton,
+                pressed && styles.pressed,
+              ]}
+              onPress={() => onStatusChange(partnerOrder, status)}>
+              <Text style={[styles.statusButtonText, isSelected && styles.selectedStatusText]}>
+                {toPartnerOrderStatusLabel(status)}
+              </Text>
+            </Pressable>
+          );
+        })}
+      </View>
+
+      {isUpdating ? <Text style={styles.updatingText}>Updating partner order...</Text> : null}
+    </View>
+  );
+}
+
 function MapButton({ onPress, title }: { onPress: () => void; title: string }) {
   return (
     <Pressable
@@ -1074,7 +1312,8 @@ function DetailRow({ label, value }: DetailRowProps) {
 
 function createUnifiedRiderJobs(
   rideJobs: Booking[],
-  foodJobs: FoodOrderWithRestaurant[]
+  foodJobs: FoodOrderWithRestaurant[],
+  partnerJobs: RiderPartnerOrder[]
 ): UnifiedRiderJob[] {
   return [
     ...rideJobs.map<UnifiedRiderJob>((ride) => ({
@@ -1090,6 +1329,13 @@ function createUnifiedRiderJobs(
       kind: 'food',
       priority: getFoodJobPriority(foodOrder.status),
       updatedAt: foodOrder.updated_at,
+    })),
+    ...partnerJobs.map<UnifiedRiderJob>((partnerOrder) => ({
+      id: partnerOrder.id,
+      kind: 'partner',
+      partnerOrder,
+      priority: getPartnerJobPriority(partnerOrder.status),
+      updatedAt: partnerOrder.updated_at,
     })),
   ];
 }
@@ -1117,30 +1363,64 @@ function matchesRiderJobFilter(job: UnifiedRiderJob, filter: RiderJobFilter) {
     return job.kind === 'food';
   }
 
+  if (filter === 'partner') {
+    return job.kind === 'partner';
+  }
+
   if (filter === 'active') {
-    return job.kind === 'ride'
-      ? job.ride.status !== 'completed' && job.ride.status !== 'cancelled'
-      : job.foodOrder.status !== 'delivered' && job.foodOrder.status !== 'cancelled';
+    if (job.kind === 'ride') {
+      return job.ride.status !== 'completed' && job.ride.status !== 'cancelled';
+    }
+
+    if (job.kind === 'food') {
+      return job.foodOrder.status !== 'delivered' && job.foodOrder.status !== 'cancelled';
+    }
+
+    return job.partnerOrder.status !== 'completed' && job.partnerOrder.status !== 'cancelled';
   }
 
   if (filter === 'accepted') {
-    return job.kind === 'ride'
-      ? job.ride.status === 'accepted' || job.ride.status === 'runner_arriving'
-      : job.foodOrder.status === 'accepted' ||
-          job.foodOrder.status === 'preparing' ||
-          job.foodOrder.status === 'picked_up';
+    if (job.kind === 'ride') {
+      return job.ride.status === 'accepted' || job.ride.status === 'runner_arriving';
+    }
+
+    if (job.kind === 'food') {
+      return (
+        job.foodOrder.status === 'accepted' ||
+        job.foodOrder.status === 'preparing' ||
+        job.foodOrder.status === 'picked_up'
+      );
+    }
+
+    return (
+      job.partnerOrder.status === 'accepted' ||
+      job.partnerOrder.status === 'preparing' ||
+      job.partnerOrder.status === 'picked_up'
+    );
   }
 
   if (filter === 'moving') {
-    return job.kind === 'ride'
-      ? job.ride.status === 'in_progress'
-      : job.foodOrder.status === 'on_the_way';
+    if (job.kind === 'ride') {
+      return job.ride.status === 'in_progress';
+    }
+
+    if (job.kind === 'food') {
+      return job.foodOrder.status === 'on_the_way';
+    }
+
+    return job.partnerOrder.status === 'on_the_way';
   }
 
   if (filter === 'completed') {
-    return job.kind === 'ride'
-      ? job.ride.status === 'completed'
-      : job.foodOrder.status === 'delivered';
+    if (job.kind === 'ride') {
+      return job.ride.status === 'completed';
+    }
+
+    if (job.kind === 'food') {
+      return job.foodOrder.status === 'delivered';
+    }
+
+    return job.partnerOrder.status === 'completed';
   }
 
   return true;
@@ -1184,12 +1464,34 @@ function getFoodJobPriority(status: FoodOrderStatus) {
   }
 }
 
+function getPartnerJobPriority(status: PartnerOrderStatus) {
+  switch (status) {
+    case 'on_the_way':
+      return 2;
+    case 'picked_up':
+      return 5;
+    case 'preparing':
+      return 6;
+    case 'accepted':
+      return 7;
+    case 'completed':
+      return 9;
+    case 'cancelled':
+      return 10;
+    case 'pending':
+    default:
+      return 8;
+  }
+}
+
 function getRiderJobEmptyText(filter: RiderJobFilter) {
   switch (filter) {
     case 'active':
       return 'No active jobs yet.';
     case 'food':
       return 'No food deliveries assigned.';
+    case 'partner':
+      return 'No partner orders assigned.';
     case 'ride':
       return 'No ride bookings assigned.';
     case 'accepted':
@@ -1206,6 +1508,17 @@ function getRiderJobEmptyText(filter: RiderJobFilter) {
 
 function getLiveLocationTargetKey(target: NonNullable<ActiveLiveLocationTarget>) {
   return `${target.kind}:${target.id}`;
+}
+
+function getLiveLocationTargetLabel(target: NonNullable<ActiveLiveLocationTarget>) {
+  switch (target.kind) {
+    case 'booking':
+      return 'ride';
+    case 'food_order':
+      return 'food';
+    case 'partner_order':
+      return 'partner';
+  }
 }
 
 function formatFare(value: number) {
@@ -1304,6 +1617,60 @@ function getFoodOrderStatusColor(status: FoodOrderStatus) {
     default:
       return BrandColors.mutedInk;
   }
+}
+
+function toPartnerOrderStatusLabel(status: PartnerOrderStatus) {
+  switch (status) {
+    case 'pending':
+      return 'Pending';
+    case 'accepted':
+      return 'Accepted';
+    case 'preparing':
+      return 'Preparing';
+    case 'picked_up':
+      return 'Picked Up';
+    case 'on_the_way':
+      return 'On The Way';
+    case 'completed':
+      return 'Completed';
+    case 'cancelled':
+      return 'Cancelled';
+  }
+}
+
+function getPartnerOrderStatusColor(status: PartnerOrderStatus) {
+  switch (status) {
+    case 'accepted':
+      return BrandColors.limeGreen;
+    case 'preparing':
+      return BrandColors.yellow;
+    case 'picked_up':
+      return BrandColors.green;
+    case 'on_the_way':
+      return BrandColors.darkGreen;
+    case 'completed':
+      return BrandColors.ink;
+    case 'cancelled':
+      return BrandColors.danger;
+    case 'pending':
+    default:
+      return BrandColors.mutedInk;
+  }
+}
+
+function getPartnerOrderItemSummary(partnerOrder: RiderPartnerOrder) {
+  if (partnerOrder.items.length === 0) {
+    return 'Items to be confirmed';
+  }
+
+  const totalQuantity = partnerOrder.items.reduce((total, item) => total + item.quantity, 0);
+  const firstItems = partnerOrder.items
+    .slice(0, 2)
+    .map((item) => `${item.quantity}x ${item.product_name}`)
+    .join(', ');
+  const suffix = partnerOrder.items.length > 2 ? ` +${partnerOrder.items.length - 2} more` : '';
+
+  return `${firstItems}${suffix} (${totalQuantity} items)`;
 }
 
 function isToday(value: string) {

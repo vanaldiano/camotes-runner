@@ -12,6 +12,7 @@ export type UpsertRiderLocationInput = Pick<
   | 'heading'
   | 'latitude'
   | 'longitude'
+  | 'partner_order_id'
   | 'rider_id'
   | 'speed'
 >;
@@ -61,10 +62,15 @@ export async function upsertRiderLocation(input: UpsertRiderLocationInput) {
     booking_id: input.booking_id ?? null,
     food_order_id: input.food_order_id ?? null,
     heading: input.heading ?? null,
+    partner_order_id: input.partner_order_id ?? null,
     speed: input.speed ?? null,
     updated_at: new Date().toISOString(),
   };
-  const onConflict = payload.food_order_id ? 'rider_id,food_order_id' : 'rider_id,booking_id';
+  const onConflict = payload.partner_order_id
+    ? 'rider_id,partner_order_id'
+    : payload.food_order_id
+      ? 'rider_id,food_order_id'
+      : 'rider_id,booking_id';
 
   const { data, error } = await supabase
     .from('rider_locations')
@@ -92,6 +98,7 @@ export async function publishCurrentRiderLocation(riderId: string, bookingId: st
     heading: point.heading,
     latitude: point.latitude,
     longitude: point.longitude,
+    partner_order_id: null,
     rider_id: riderId,
     speed: point.speed,
   });
@@ -106,6 +113,25 @@ export async function publishCurrentRiderFoodOrderLocation(riderId: string, food
     heading: point.heading,
     latitude: point.latitude,
     longitude: point.longitude,
+    partner_order_id: null,
+    rider_id: riderId,
+    speed: point.speed,
+  });
+}
+
+export async function publishCurrentRiderPartnerOrderLocation(
+  riderId: string,
+  partnerOrderId: string
+) {
+  const point = await getRiderCurrentLocationPoint();
+
+  return upsertRiderLocation({
+    booking_id: null,
+    food_order_id: null,
+    heading: point.heading,
+    latitude: point.latitude,
+    longitude: point.longitude,
+    partner_order_id: partnerOrderId,
     rider_id: riderId,
     speed: point.speed,
   });
@@ -132,6 +158,22 @@ export async function getLatestRiderLocationForFoodOrder(foodOrderId: string) {
     .from('rider_locations')
     .select('*')
     .eq('food_order_id', foodOrderId)
+    .order('updated_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (error) {
+    throw error;
+  }
+
+  return data;
+}
+
+export async function getLatestRiderLocationForPartnerOrder(partnerOrderId: string) {
+  const { data, error } = await supabase
+    .from('rider_locations')
+    .select('*')
+    .eq('partner_order_id', partnerOrderId)
     .order('updated_at', { ascending: false })
     .limit(1)
     .maybeSingle();

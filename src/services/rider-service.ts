@@ -7,9 +7,17 @@ import {
   updateFoodOrderStatus,
   type FoodOrderWithRestaurant,
 } from '@/services/food-order-service';
-import type { BookingStatus, FoodOrderStatus, Tables } from '@/types/database';
+import type { BookingStatus, FoodOrderStatus, Json, PartnerOrderStatus, Tables } from '@/types/database';
 
 export type Rider = Tables<'riders'>;
+export type RiderPartnerOrderItem = Tables<'partner_order_items'>;
+export type RiderPartnerOrder = Tables<'partner_orders'> & {
+  items: RiderPartnerOrderItem[];
+  partner_address: string | null;
+  partner_latitude: number | null;
+  partner_longitude: number | null;
+  partner_name: string;
+};
 
 export const MVP_RIDER_NAME = 'Juan Dela Cruz';
 
@@ -81,6 +89,54 @@ export const fallbackRiderFoodOrders: FoodOrderWithRestaurant[] = [
     status: 'accepted',
     subtotal: 315,
     total_amount: 365,
+    updated_at: new Date().toISOString(),
+  },
+];
+
+export const fallbackRiderPartnerOrders: RiderPartnerOrder[] = [
+  {
+    accepted_at: null,
+    assigned_at: new Date().toISOString(),
+    assigned_rider_id: fallbackRider.id,
+    cancelled_at: null,
+    completed_at: null,
+    created_at: new Date().toISOString(),
+    customer_id: null,
+    customer_name: 'Juan Customer',
+    customer_phone: '09123456789',
+    customer_tracking_token: 'sample-token',
+    customer_tracking_token_created_at: new Date().toISOString(),
+    delivery_address: 'San Francisco Town Center',
+    delivery_fee: 50,
+    delivery_lat: 10.6469,
+    delivery_lng: 124.3506,
+    id: 'sample-partner-order-1',
+    items: [
+      {
+        created_at: new Date().toISOString(),
+        id: 'sample-partner-order-item-1',
+        line_total: 165,
+        partner_order_id: 'sample-partner-order-1',
+        product_description: 'Daily essentials',
+        product_id: null,
+        product_name: 'Mini mart items',
+        quantity: 3,
+        unit_price: 55,
+      },
+    ],
+    notes: 'Please call before delivery.',
+    partner_address: 'Camotes Mini Mart, San Francisco',
+    partner_id: 'sample-partner-camotes-mini-mart',
+    partner_latitude: 10.6469,
+    partner_longitude: 124.3506,
+    partner_name: 'Camotes Mini Mart',
+    partner_status: 'new',
+    payment_method: 'cash',
+    rider_status: null,
+    service_fee: 0,
+    status: 'accepted',
+    subtotal: 165,
+    total_amount: 215,
     updated_at: new Date().toISOString(),
   },
 ];
@@ -172,14 +228,27 @@ export async function getAssignedBookingsForRider(riderId: string) {
   return data ?? [];
 }
 
+export async function getAssignedPartnerOrdersForRider(riderId: string) {
+  const { data, error } = await supabase.rpc('get_assigned_partner_orders_for_rider', {
+    target_rider_id: riderId,
+  });
+
+  if (error) {
+    throw error;
+  }
+
+  return normalizeRiderPartnerOrders(data);
+}
+
 export async function getMvpRiderJobs() {
   const rider = await getRiderByName(MVP_RIDER_NAME);
-  const [jobs, foodOrders] = await Promise.all([
+  const [jobs, foodOrders, partnerOrders] = await Promise.all([
     getAssignedBookingsForRider(rider.id),
     getAssignedFoodOrdersForRider(rider.id),
+    getAssignedPartnerOrdersForRider(rider.id),
   ]);
 
-  return { foodOrders, jobs, rider };
+  return { foodOrders, jobs, partnerOrders, rider };
 }
 
 export async function getAuthenticatedRiderJobs(authUserId: string) {
@@ -189,12 +258,13 @@ export async function getAuthenticatedRiderJobs(authUserId: string) {
     throw new RiderNotFoundError(authUserId);
   }
 
-  const [jobs, foodOrders] = await Promise.all([
+  const [jobs, foodOrders, partnerOrders] = await Promise.all([
     getAssignedBookingsForRider(rider.id),
     getAssignedFoodOrdersForRider(rider.id),
+    getAssignedPartnerOrdersForRider(rider.id),
   ]);
 
-  return { foodOrders, jobs, rider };
+  return { foodOrders, jobs, partnerOrders, rider };
 }
 
 export async function linkRiderAccountToRider(riderId: string, authUserId: string) {
@@ -286,6 +356,30 @@ export async function updateRiderFoodOrderStatus(
   return foodOrder;
 }
 
+export async function updateRiderPartnerOrderStatus(
+  partnerOrderId: string,
+  riderId: string,
+  status: Extract<PartnerOrderStatus, 'accepted' | 'picked_up' | 'on_the_way' | 'completed'>
+) {
+  const { data, error } = await supabase.rpc('update_partner_order_status_for_rider', {
+    next_status: status,
+    target_partner_order_id: partnerOrderId,
+    target_rider_id: riderId,
+  });
+
+  if (error) {
+    throw error;
+  }
+
+  const order = normalizeRiderPartnerOrder(data);
+
+  if (!order) {
+    throw new Error('Supabase did not return the updated partner order.');
+  }
+
+  return order;
+}
+
 export async function assignRiderToBooking(bookingId: string, riderId: string | null) {
   const { data, error } = await supabase
     .from('bookings')
@@ -343,4 +437,98 @@ async function notifyCustomerForFoodStatusFromRider(
 ) {
   const { notifyCustomerForFoodStatus } = await import('@/services/push-notification-service');
   await notifyCustomerForFoodStatus(foodOrderId, customerId, status);
+}
+
+function normalizeRiderPartnerOrders(data: Json | null): RiderPartnerOrder[] {
+  if (!Array.isArray(data)) {
+    return [];
+  }
+
+  return data
+    .map(normalizeRiderPartnerOrder)
+    .filter((order): order is RiderPartnerOrder => Boolean(order));
+}
+
+function normalizeRiderPartnerOrder(data: Json | null): RiderPartnerOrder | null {
+  if (!data || typeof data !== 'object' || Array.isArray(data)) {
+    return null;
+  }
+
+  const rawOrder = data as Partial<RiderPartnerOrder> & {
+    items?: Json;
+  };
+
+  if (!rawOrder.id || !rawOrder.partner_id || !rawOrder.status || !rawOrder.created_at) {
+    return null;
+  }
+
+  return {
+    accepted_at: rawOrder.accepted_at ?? null,
+    assigned_at: rawOrder.assigned_at ?? null,
+    assigned_rider_id: rawOrder.assigned_rider_id ?? null,
+    cancelled_at: rawOrder.cancelled_at ?? null,
+    completed_at: rawOrder.completed_at ?? null,
+    created_at: rawOrder.created_at,
+    customer_id: rawOrder.customer_id ?? null,
+    customer_name: rawOrder.customer_name ?? null,
+    customer_phone: rawOrder.customer_phone ?? null,
+    customer_tracking_token: rawOrder.customer_tracking_token ?? null,
+    customer_tracking_token_created_at: rawOrder.customer_tracking_token_created_at ?? null,
+    delivery_address: rawOrder.delivery_address ?? null,
+    delivery_fee: Number(rawOrder.delivery_fee ?? 0),
+    delivery_lat: getOptionalNumber(rawOrder.delivery_lat),
+    delivery_lng: getOptionalNumber(rawOrder.delivery_lng),
+    id: rawOrder.id,
+    items: normalizeRiderPartnerOrderItems(rawOrder.items),
+    notes: rawOrder.notes ?? null,
+    partner_address: rawOrder.partner_address ?? null,
+    partner_id: rawOrder.partner_id,
+    partner_latitude: getOptionalNumber(rawOrder.partner_latitude),
+    partner_longitude: getOptionalNumber(rawOrder.partner_longitude),
+    partner_name: rawOrder.partner_name ?? 'Partner shop',
+    partner_status: rawOrder.partner_status ?? 'new',
+    payment_method: rawOrder.payment_method ?? 'cash',
+    rider_status: rawOrder.rider_status ?? null,
+    service_fee: Number(rawOrder.service_fee ?? 0),
+    status: rawOrder.status,
+    subtotal: Number(rawOrder.subtotal ?? 0),
+    total_amount: Number(rawOrder.total_amount ?? 0),
+    updated_at: rawOrder.updated_at ?? rawOrder.created_at,
+  };
+}
+
+function normalizeRiderPartnerOrderItems(data: Json | undefined): RiderPartnerOrderItem[] {
+  if (!Array.isArray(data)) {
+    return [];
+  }
+
+  return data
+    .map((item) => {
+      if (!item || typeof item !== 'object' || Array.isArray(item)) {
+        return null;
+      }
+
+      const rawItem = item as Partial<RiderPartnerOrderItem>;
+
+      if (!rawItem.id || !rawItem.partner_order_id || !rawItem.product_name) {
+        return null;
+      }
+
+      return {
+        created_at: rawItem.created_at ?? new Date(0).toISOString(),
+        id: rawItem.id,
+        line_total: Number(rawItem.line_total ?? 0),
+        partner_order_id: rawItem.partner_order_id,
+        product_description: rawItem.product_description ?? null,
+        product_id: rawItem.product_id ?? null,
+        product_name: rawItem.product_name,
+        quantity: Number(rawItem.quantity ?? 1),
+        unit_price: Number(rawItem.unit_price ?? 0),
+      };
+    })
+    .filter((item): item is RiderPartnerOrderItem => Boolean(item));
+}
+
+function getOptionalNumber(value: unknown) {
+  return typeof value === 'number' && Number.isFinite(value) ? value : null;
 }
