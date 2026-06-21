@@ -15,6 +15,7 @@ type PartnerCartScreenProps = {
 export function PartnerCartScreen({ partnerId }: PartnerCartScreenProps) {
   const {
     cartSubtotal,
+    clearCart,
     decreaseQuantity,
     increaseQuantity,
     itemCount,
@@ -28,11 +29,11 @@ export function PartnerCartScreen({ partnerId }: PartnerCartScreenProps) {
 
   return (
     <AppScreen>
-      <ScreenHeader showHomeButton title="Partner cart" />
+      <ScreenHeader showHomeButton title="Your order" />
 
       {visibleItems.length === 0 ? (
         <View style={styles.emptyCard}>
-          <Text style={styles.emptyTitle}>Your partner cart is empty.</Text>
+          <Text style={styles.emptyTitle}>Your cart is empty.</Text>
           <Text style={styles.emptyText}>Add products from a partner shop before checkout.</Text>
           <PrimaryButton
             title="Back to partner shop"
@@ -43,7 +44,7 @@ export function PartnerCartScreen({ partnerId }: PartnerCartScreenProps) {
       ) : (
         <>
           <View style={styles.headerCard}>
-            <Text style={styles.eyebrow}>Partner order</Text>
+            <Text style={styles.eyebrow}>Partner shop</Text>
             <Text style={styles.partnerName}>{partnerName}</Text>
             <Text style={styles.headerText}>{itemCount} items ready for checkout</Text>
           </View>
@@ -63,6 +64,8 @@ export function PartnerCartScreen({ partnerId }: PartnerCartScreenProps) {
           <View style={styles.summaryCard}>
             <SummaryRow label="Subtotal" value={formatCurrency(cartSubtotal)} />
             <SummaryRow label="Delivery fee" value="Confirmed at checkout" />
+            <View style={styles.summaryDivider} />
+            <SummaryRow highlighted label="Items total" value={formatCurrency(cartSubtotal)} />
           </View>
 
           <PrimaryButton
@@ -71,6 +74,7 @@ export function PartnerCartScreen({ partnerId }: PartnerCartScreenProps) {
               router.push({ pathname: '/partner-checkout/[partnerId]', params: { partnerId } })
             }
           />
+          <PrimaryButton title="Clear Cart" variant="danger" onPress={clearCart} />
         </>
       )}
     </AppScreen>
@@ -112,11 +116,19 @@ function CartItemRow({
   );
 }
 
-function SummaryRow({ label, value }: { label: string; value: string }) {
+function SummaryRow({
+  highlighted = false,
+  label,
+  value,
+}: {
+  highlighted?: boolean;
+  label: string;
+  value: string;
+}) {
   return (
     <View style={styles.summaryRow}>
-      <Text style={styles.summaryLabel}>{label}</Text>
-      <Text style={styles.summaryValue}>{value}</Text>
+      <Text style={[styles.summaryLabel, highlighted && styles.highlightedSummaryText]}>{label}</Text>
+      <Text style={[styles.summaryValue, highlighted && styles.highlightedSummaryText]}>{value}</Text>
     </View>
   );
 }
@@ -131,10 +143,10 @@ function formatCurrency(value: number) {
 
 const styles = StyleSheet.create({
   emptyCard: {
-    backgroundColor: BrandColors.white,
-    borderColor: BrandColors.border,
     borderRadius: 24,
+    backgroundColor: BrandColors.white,
     borderWidth: 1,
+    borderColor: BrandColors.border,
     gap: 12,
     padding: 18,
   },
@@ -146,7 +158,7 @@ const styles = StyleSheet.create({
   },
   emptyTitle: {
     color: BrandColors.ink,
-    fontSize: 20,
+    fontSize: 17,
     fontWeight: '900',
   },
   eyebrow: {
@@ -156,11 +168,11 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
   },
   headerCard: {
-    backgroundColor: BrandColors.white,
-    borderColor: BrandColors.border,
     borderRadius: 24,
+    backgroundColor: BrandColors.white,
     borderWidth: 1,
-    gap: 4,
+    borderColor: BrandColors.border,
+    gap: 5,
     padding: 16,
   },
   headerText: {
@@ -169,13 +181,14 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   itemCard: {
+    alignItems: 'center',
+    borderRadius: 24,
     backgroundColor: BrandColors.white,
-    borderColor: BrandColors.border,
-    borderRadius: 22,
     borderWidth: 1,
+    borderColor: BrandColors.border,
     flexDirection: 'row',
     gap: 12,
-    padding: 12,
+    padding: 16,
   },
   itemCopy: {
     flex: 1,
@@ -196,13 +209,13 @@ const styles = StyleSheet.create({
     fontWeight: '900',
   },
   itemPrice: {
-    color: BrandColors.darkGreen,
-    fontSize: 15,
+    color: BrandColors.green,
+    fontSize: 14,
     fontWeight: '900',
   },
   partnerName: {
     color: BrandColors.ink,
-    fontSize: 22,
+    fontSize: 19,
     fontWeight: '900',
   },
   quantityButton: {
@@ -215,7 +228,8 @@ const styles = StyleSheet.create({
   },
   quantityButtonText: {
     color: BrandColors.green,
-    fontSize: 18,
+    fontSize: 20,
+    lineHeight: 23,
     fontWeight: '900',
   },
   quantityRow: {
@@ -240,11 +254,20 @@ const styles = StyleSheet.create({
     fontWeight: '900',
   },
   summaryCard: {
+    borderRadius: 24,
     backgroundColor: BrandColors.white,
-    borderColor: BrandColors.border,
-    borderRadius: 22,
     borderWidth: 1,
-    paddingHorizontal: 16,
+    borderColor: BrandColors.border,
+    gap: 10,
+    padding: 16,
+  },
+  highlightedSummaryText: {
+    color: BrandColors.green,
+    fontSize: 17,
+  },
+  summaryDivider: {
+    backgroundColor: BrandColors.border,
+    height: 1,
   },
   summaryLabel: {
     color: BrandColors.mutedInk,
@@ -253,11 +276,10 @@ const styles = StyleSheet.create({
   },
   summaryRow: {
     alignItems: 'center',
-    borderBottomColor: BrandColors.border,
-    borderBottomWidth: 1,
     flexDirection: 'row',
+    gap: 14,
     justifyContent: 'space-between',
-    minHeight: 48,
+    minHeight: 32,
   },
   summaryValue: {
     color: BrandColors.ink,

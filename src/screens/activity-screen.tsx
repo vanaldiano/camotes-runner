@@ -21,9 +21,13 @@ import {
   type FoodOrderWithRestaurant,
 } from '@/services/food-order-service';
 import { useFoodOrderStatus } from '@/services/food-order-status';
+import {
+  getMyPartnerOrders,
+  type PartnerOrderWithPartner,
+} from '@/services/partner-order-service';
 import { subscribeToCustomerActivityChanges } from '@/services/realtime-service';
 import { hasSupabaseConfig } from '@/services/supabase';
-import type { BookingStatus, FoodOrderStatus } from '@/types/database';
+import type { BookingStatus, FoodOrderStatus, PartnerOrderStatus } from '@/types/database';
 
 type UnifiedActivityItem =
   | {
@@ -45,6 +49,17 @@ type UnifiedActivityItem =
       secondary: string;
       status: FoodOrderStatus;
       trackingRecord: FoodOrderWithRestaurant;
+    }
+  | {
+      amount: number;
+      createdAt: string;
+      id: string;
+      kind: 'partner';
+      paymentMethod: string;
+      primary: string;
+      secondary: string;
+      status: PartnerOrderStatus;
+      trackingRecord: PartnerOrderWithPartner;
     };
 
 const activeRideStatuses: BookingStatus[] = [
@@ -62,6 +77,14 @@ const activeFoodStatuses: FoodOrderStatus[] = [
 ];
 const historyRideStatuses: BookingStatus[] = ['completed', 'cancelled'];
 const historyFoodStatuses: FoodOrderStatus[] = ['delivered', 'cancelled'];
+const activePartnerStatuses: PartnerOrderStatus[] = [
+  'pending',
+  'accepted',
+  'preparing',
+  'picked_up',
+  'on_the_way',
+];
+const historyPartnerStatuses: PartnerOrderStatus[] = ['completed', 'cancelled'];
 
 export function ActivityScreen() {
   const { setBookingFromSupabase } = useBookingSimulation();
@@ -85,14 +108,22 @@ export function ActivityScreen() {
 
     try {
       const authState = await getCurrentAuthState().catch(() => null);
-      const [bookings, foodOrders] = await Promise.all([
+      const [bookings, foodOrders, partnerOrders] = await Promise.all([
         authState?.user ? getUserBookings(authState.user.id) : getLatestBookings(20),
         authState?.user ? getUserFoodOrders(authState.user.id) : getLatestFoodOrders(20),
+        getMyPartnerOrders(authState?.user?.id ?? null).catch((error) => {
+          if (__DEV__) {
+            console.warn('PARTNER_ACTIVITY_LOAD_SKIPPED', error);
+          }
+
+          return [];
+        }),
       ]);
 
       setItems([
         ...bookings.map(mapBookingToActivityItem),
         ...foodOrders.map(mapFoodOrderToActivityItem),
+        ...partnerOrders.map(mapPartnerOrderToActivityItem),
       ].sort(sortByNewest));
       setActivityMessage('');
     } catch {
@@ -154,6 +185,11 @@ export function ActivityScreen() {
       return;
     }
 
+    if (item.kind === 'partner') {
+      router.push({ pathname: '/partner-order/[id]', params: { id: item.id } });
+      return;
+    }
+
     setCurrentFoodOrder(item.trackingRecord);
     router.push('/food-tracking');
   }
@@ -166,7 +202,7 @@ export function ActivityScreen() {
       {activityMessage ? <Text style={styles.activityMessage}>{activityMessage}</Text> : null}
 
       <ActivitySection
-        emptyText="No active rides or food orders right now."
+        emptyText="No active orders or bookings yet."
         items={activeItems}
         title="Active"
         onTrackItem={handleTrackItem}
@@ -229,7 +265,9 @@ function ActivityCard({
             name={
               item.kind === 'ride'
                 ? { ios: 'motorcycle', android: 'two_wheeler', web: 'two_wheeler' }
-                : { ios: 'takeoutbag.and.cup.and.straw', android: 'delivery_dining', web: 'delivery_dining' }
+                : item.kind === 'food'
+                  ? { ios: 'takeoutbag.and.cup.and.straw', android: 'delivery_dining', web: 'delivery_dining' }
+                  : { ios: 'shippingbox.fill', android: 'local_shipping', web: 'local_shipping' }
             }
             size={20}
             style={styles.cardIcon}
@@ -243,15 +281,25 @@ function ActivityCard({
       </View>
 
       <Text style={styles.secondary}>{item.secondary}</Text>
+      {item.kind === 'partner' ? (
+        <Text style={styles.secondary}>
+          Ref {item.id.slice(0, 8)} - {toTitleCase(item.paymentMethod || 'cash')}
+        </Text>
+      ) : null}
+      {item.kind === 'partner' && item.trackingRecord.is_stale ? (
+        <Text style={styles.secondary}>
+          Status may be updating. Pulling latest details when available.
+        </Text>
+      ) : null}
 
       <View style={styles.cardBottom}>
         <View>
           <Text style={styles.metaLabel}>{item.kind === 'ride' ? 'Fare' : 'Total'}</Text>
           <Text style={styles.fare}>{formatPeso(item.amount)}</Text>
         </View>
-        {isActive ? (
+        {isActive || item.kind === 'partner' ? (
           <PrimaryButton
-            title="Track"
+            title={item.kind === 'partner' ? 'View Details' : 'Track'}
             style={styles.trackButton}
             onPress={() => onTrackItem(item)}
           />
@@ -295,16 +343,42 @@ function mapFoodOrderToActivityItem(foodOrder: FoodOrderWithRestaurant): Unified
   };
 }
 
+function mapPartnerOrderToActivityItem(partnerOrder: PartnerOrderWithPartner): UnifiedActivityItem {
+  return {
+    amount: Number(partnerOrder.total_amount ?? 0),
+    createdAt: partnerOrder.updated_at ?? partnerOrder.created_at,
+    id: partnerOrder.id,
+    kind: 'partner',
+    paymentMethod: partnerOrder.payment_method,
+    primary: partnerOrder.partner_name,
+    secondary: partnerOrder.delivery_address ?? 'Delivery address to be confirmed',
+    status: partnerOrder.status,
+    trackingRecord: partnerOrder,
+  };
+}
+
 function isActiveActivityItem(item: UnifiedActivityItem) {
-  return item.kind === 'ride'
-    ? activeRideStatuses.includes(item.status)
-    : activeFoodStatuses.includes(item.status);
+  if (item.kind === 'ride') {
+    return activeRideStatuses.includes(item.status);
+  }
+
+  if (item.kind === 'food') {
+    return activeFoodStatuses.includes(item.status);
+  }
+
+  return activePartnerStatuses.includes(item.status);
 }
 
 function isHistoryActivityItem(item: UnifiedActivityItem) {
-  return item.kind === 'ride'
-    ? historyRideStatuses.includes(item.status)
-    : historyFoodStatuses.includes(item.status);
+  if (item.kind === 'ride') {
+    return historyRideStatuses.includes(item.status);
+  }
+
+  if (item.kind === 'food') {
+    return historyFoodStatuses.includes(item.status);
+  }
+
+  return historyPartnerStatuses.includes(item.status);
 }
 
 function getActivityStatusLabel(item: UnifiedActivityItem) {
@@ -312,10 +386,11 @@ function getActivityStatusLabel(item: UnifiedActivityItem) {
     return toStatusLabel(item.status);
   }
 
-  return item.status
-    .split('_')
-    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-    .join(' ');
+  if (item.kind === 'partner') {
+    return toPartnerOrderStatusLabel(item.status);
+  }
+
+  return toTitleCase(item.status);
 }
 
 function getActivityStatusColor(item: UnifiedActivityItem) {
@@ -333,6 +408,7 @@ function getActivityStatusColor(item: UnifiedActivityItem) {
     case 'on_the_way':
       return BrandColors.darkGreen;
     case 'delivered':
+    case 'completed':
       return BrandColors.ink;
     case 'cancelled':
       return BrandColors.danger;
@@ -414,7 +490,72 @@ function getSampleActivityItems(): UnifiedActivityItem[] {
         updated_at: now,
       },
     },
+    {
+      amount: 215,
+      createdAt: now,
+      id: 'sample-partner-order-active',
+      kind: 'partner',
+      paymentMethod: 'cash',
+      primary: 'Camotes Mini Mart',
+      secondary: 'San Francisco Town Center',
+      status: 'pending',
+      trackingRecord: {
+        accepted_at: null,
+        assigned_at: null,
+        assigned_rider_id: null,
+        cancelled_at: null,
+        completed_at: null,
+        created_at: now,
+        customer_id: null,
+        customer_name: 'Juan Customer',
+        customer_phone: '09123456789',
+        customer_tracking_token: 'sample-token',
+        customer_tracking_token_created_at: now,
+        delivery_address: 'San Francisco Town Center',
+        delivery_fee: 50,
+        delivery_lat: 10.6469,
+        delivery_lng: 124.3506,
+        id: 'sample-partner-order-active',
+        notes: null,
+        partner_id: 'sample-partner-camotes-mini-mart',
+        partner_name: 'Camotes Mini Mart',
+        partner_status: 'new',
+        payment_method: 'cash',
+        rider_status: null,
+        service_fee: 0,
+        status: 'pending',
+        subtotal: 165,
+        total_amount: 215,
+        updated_at: now,
+      },
+    },
   ];
+}
+
+function toPartnerOrderStatusLabel(status: PartnerOrderStatus) {
+  switch (status) {
+    case 'pending':
+      return 'Pending';
+    case 'accepted':
+      return 'Accepted';
+    case 'preparing':
+      return 'Preparing';
+    case 'picked_up':
+      return 'Picked Up';
+    case 'on_the_way':
+      return 'On the Way';
+    case 'completed':
+      return 'Completed';
+    case 'cancelled':
+      return 'Cancelled';
+  }
+}
+
+function toTitleCase(value: string) {
+  return value
+    .split('_')
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' ');
 }
 
 function sortByNewest(a: UnifiedActivityItem, b: UnifiedActivityItem) {

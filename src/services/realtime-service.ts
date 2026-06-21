@@ -181,6 +181,11 @@ export function subscribeToCustomerActivityChanges(
       { event: '*', schema: 'public', table: 'food_orders' },
       onActivityChange
     )
+    .on(
+      'postgres_changes',
+      { event: '*', schema: 'public', table: 'partner_orders' },
+      onActivityChange
+    )
     .subscribe((status) => {
       if (realtimeFailureStatuses.includes(status)) {
         onFallbackNeeded?.();

@@ -50,21 +50,26 @@ export function PartnerOrderSuccessScreen({ orderId }: PartnerOrderSuccessScreen
     <AppScreen>
       <ScreenHeader showHomeButton title="Order sent" />
 
+      <View style={styles.statusHero}>
+        <View style={styles.statusHeader}>
+          <AppIcon
+            backgroundColor={BrandColors.yellow}
+            color={BrandColors.darkGreen}
+            name={{ ios: 'checkmark.circle.fill', android: 'check_circle', web: 'check_circle' }}
+            size={34}
+            style={styles.icon}
+          />
+          <View style={styles.statusCopy}>
+            <Text style={styles.statusLabel}>Partner order</Text>
+            <Text style={styles.title}>Order sent</Text>
+          </View>
+        </View>
+      </View>
+
       <View style={styles.card}>
-        <AppIcon
-          backgroundColor={BrandColors.paleYellow}
-          color={BrandColors.darkGreen}
-          name={{ ios: 'checkmark.circle.fill', android: 'check_circle', web: 'check_circle' }}
-          size={36}
-          style={styles.icon}
-        />
-        <Text style={styles.title}>Your order was sent to the partner shop.</Text>
-        <Text style={styles.text}>
-          Order reference: {orderId.slice(0, 8)}
-        </Text>
-        <Text style={styles.text}>
-          Status: {order?.status ? toTitleCase(order.status) : 'Pending'}
-        </Text>
+        <Text style={styles.cardTitle}>Your order was sent to the partner shop.</Text>
+        <DetailRow label="Order reference" value={orderId.slice(0, 8)} />
+        <DetailRow label="Status" value={order?.status ? toTitleCase(order.status) : 'Pending'} />
         {!couldLoadOrder ? (
           <Text style={styles.note}>Order details may take a moment to appear.</Text>
         ) : null}
@@ -72,11 +77,20 @@ export function PartnerOrderSuccessScreen({ orderId }: PartnerOrderSuccessScreen
 
       <PrimaryButton title="Back to Home" onPress={() => router.replace('/')} />
       <PrimaryButton
-        title="Browse Categories"
+        title="View Activity"
         variant="secondary"
-        onPress={() => router.replace('/')}
+        onPress={() => router.replace('/activity')}
       />
     </AppScreen>
+  );
+}
+
+function DetailRow({ label, value }: { label: string; value: string }) {
+  return (
+    <View style={styles.detailRow}>
+      <Text style={styles.detailLabel}>{label}</Text>
+      <Text style={styles.detailValue}>{value}</Text>
+    </View>
   );
 }
 
@@ -89,16 +103,48 @@ function toTitleCase(value: string) {
 
 const styles = StyleSheet.create({
   card: {
-    alignItems: 'center',
     backgroundColor: BrandColors.white,
     borderColor: BrandColors.border,
-    borderRadius: 28,
+    borderRadius: 24,
     borderWidth: 1,
-    gap: 10,
-    padding: 24,
+    gap: 8,
+    padding: 16,
+    shadowColor: BrandColors.cardShadow,
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.07,
+    shadowRadius: 18,
+    elevation: 3,
+  },
+  cardTitle: {
+    color: BrandColors.ink,
+    fontSize: 17,
+    fontWeight: '900',
+    lineHeight: 23,
+  },
+  detailLabel: {
+    color: BrandColors.mutedInk,
+    flex: 1,
+    fontSize: 13,
+    fontWeight: '800',
+  },
+  detailRow: {
+    alignItems: 'center',
+    borderBottomColor: BrandColors.border,
+    borderBottomWidth: 1,
+    flexDirection: 'row',
+    gap: 16,
+    justifyContent: 'space-between',
+    minHeight: 44,
+  },
+  detailValue: {
+    color: BrandColors.ink,
+    flex: 1,
+    fontSize: 14,
+    fontWeight: '900',
+    textAlign: 'right',
   },
   icon: {
-    borderRadius: 26,
+    borderRadius: 24,
     height: 64,
     width: 64,
   },
@@ -107,7 +153,27 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '900',
     lineHeight: 19,
-    textAlign: 'center',
+  },
+  statusCopy: {
+    flex: 1,
+    gap: 3,
+  },
+  statusHeader: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: 14,
+  },
+  statusHero: {
+    backgroundColor: BrandColors.darkGreen,
+    borderRadius: 28,
+    gap: 18,
+    padding: 20,
+  },
+  statusLabel: {
+    color: BrandColors.yellow,
+    fontSize: 12,
+    fontWeight: '900',
+    textTransform: 'uppercase',
   },
   text: {
     color: BrandColors.mutedInk,
@@ -116,10 +182,9 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   title: {
-    color: BrandColors.ink,
-    fontSize: 22,
+    color: BrandColors.white,
+    fontSize: 25,
     fontWeight: '900',
-    lineHeight: 28,
-    textAlign: 'center',
+    lineHeight: 31,
   },
 });

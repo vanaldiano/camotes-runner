@@ -724,6 +724,8 @@ export type Database = {
           customer_id: string | null;
           customer_name: string | null;
           customer_phone: string | null;
+          customer_tracking_token: string | null;
+          customer_tracking_token_created_at: string | null;
           delivery_address: string | null;
           delivery_fee: number;
           delivery_lat: number | null;
@@ -750,6 +752,8 @@ export type Database = {
           customer_id?: string | null;
           customer_name?: string | null;
           customer_phone?: string | null;
+          customer_tracking_token?: string | null;
+          customer_tracking_token_created_at?: string | null;
           delivery_address?: string | null;
           delivery_fee?: number;
           delivery_lat?: number | null;
@@ -776,6 +780,8 @@ export type Database = {
           customer_id?: string | null;
           customer_name?: string | null;
           customer_phone?: string | null;
+          customer_tracking_token?: string | null;
+          customer_tracking_token_created_at?: string | null;
           delivery_address?: string | null;
           delivery_fee?: number;
           delivery_lat?: number | null;
@@ -1302,7 +1308,21 @@ export type Database = {
           p_partner_id: string;
           p_payment_method: string | null;
         };
-        Returns: string;
+        Returns: Json;
+      };
+      get_partner_order_by_tracking_token: {
+        Args: {
+          p_order_id: string;
+          p_tracking_token: string;
+        };
+        Returns: Json;
+      };
+      get_partner_order_items_by_tracking_token: {
+        Args: {
+          p_order_id: string;
+          p_tracking_token: string;
+        };
+        Returns: Json;
       };
     };
     Enums: Record<string, never>;

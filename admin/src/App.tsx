@@ -2386,56 +2386,65 @@ export function App() {
                       <p className="empty-state">No partner orders for this shop yet.</p>
                     ) : (
                       <div className="entity-list">
-                        {previewPartnerOrders.slice(0, 5).map((order) => (
-                          <article className="preview-product-card" key={order.id}>
-                            <div>
-                              <h4>Order {order.id.slice(0, 8)}</h4>
-                              <p className="entity-meta">
-                                {order.customer_name || 'Customer'} - {formatCurrency(Number(order.total_amount ?? 0))}
-                              </p>
-                              <OrderItemsSummary
-                                items={getPartnerOrderItemsForOrder(order.id, previewPartnerOrderItems)}
-                              />
-                              <div className="status-row">
-                                <span className="status-pill active">
-                                  {partnerOrderStatusLabels[order.status]}
-                                </span>
-                                <span className={order.assigned_rider_id ? 'status-pill active' : 'status-pill'}>
-                                  {getRiderName(order.assigned_rider_id, riders)}
-                                </span>
+                        {previewPartnerOrders.slice(0, 5).map((order) => {
+                          const locationLinks = getPartnerOrderLocationLinks(order, businessPartners);
+
+                          return (
+                            <article className="preview-product-card" key={order.id}>
+                              <div>
+                                <h4>Order {order.id.slice(0, 8)}</h4>
+                                <p className="entity-meta">
+                                  {order.customer_name || 'Customer'} - {formatCurrency(Number(order.total_amount ?? 0))}
+                                </p>
+                                <AddressWithCoordinates
+                                  coordinates={formatCoordinates(order.delivery_lat, order.delivery_lng)}
+                                  label={order.delivery_address || 'No delivery address'}
+                                  mapLinks={locationLinks}
+                                />
+                                <OrderItemsSummary
+                                  items={getPartnerOrderItemsForOrder(order.id, previewPartnerOrderItems)}
+                                />
+                                <div className="status-row">
+                                  <span className="status-pill active">
+                                    {partnerOrderStatusLabels[order.status]}
+                                  </span>
+                                  <span className={order.assigned_rider_id ? 'status-pill active' : 'status-pill'}>
+                                    {getRiderName(order.assigned_rider_id, riders)}
+                                  </span>
+                                </div>
                               </div>
-                            </div>
-                            <div className="action-row">
-                              <button
-                                className="secondary-button"
-                                disabled={updatingPartnerOrderId === order.id}
-                                type="button"
-                                onClick={() =>
-                                  void handlePartnerOrderStatusChange(order.id, 'accepted')
-                                }>
-                                Accept
-                              </button>
-                              <button
-                                className="secondary-button"
-                                disabled={updatingPartnerOrderId === order.id}
-                                type="button"
-                                onClick={() =>
-                                  void handlePartnerOrderStatusChange(order.id, 'preparing')
-                                }>
-                                Preparing
-                              </button>
-                              <button
-                                className="secondary-button"
-                                disabled={updatingPartnerOrderId === order.id}
-                                type="button"
-                                onClick={() =>
-                                  void handlePartnerOrderStatusChange(order.id, 'picked_up')
-                                }>
-                                Ready for Pickup
-                              </button>
-                            </div>
-                          </article>
-                        ))}
+                              <div className="action-row">
+                                <button
+                                  className="secondary-button"
+                                  disabled={updatingPartnerOrderId === order.id}
+                                  type="button"
+                                  onClick={() =>
+                                    void handlePartnerOrderStatusChange(order.id, 'accepted')
+                                  }>
+                                  Accept
+                                </button>
+                                <button
+                                  className="secondary-button"
+                                  disabled={updatingPartnerOrderId === order.id}
+                                  type="button"
+                                  onClick={() =>
+                                    void handlePartnerOrderStatusChange(order.id, 'preparing')
+                                  }>
+                                  Preparing
+                                </button>
+                                <button
+                                  className="secondary-button"
+                                  disabled={updatingPartnerOrderId === order.id}
+                                  type="button"
+                                  onClick={() =>
+                                    void handlePartnerOrderStatusChange(order.id, 'picked_up')
+                                  }>
+                                  Ready for Pickup
+                                </button>
+                              </div>
+                            </article>
+                          );
+                        })}
                       </div>
                     )}
                   </div>
@@ -2749,67 +2758,72 @@ export function App() {
                 </tr>
               </thead>
               <tbody>
-                {partnerOrders.map((partnerOrder) => (
-                  <tr key={partnerOrder.id}>
-                    <td>{getPartnerName(partnerOrder.partner_id, businessPartners)}</td>
-                    <td>{partnerOrder.customer_name || 'Customer'}</td>
-                    <td>{partnerOrder.customer_phone || 'No phone'}</td>
-                    <td>
-                      <OrderItemsSummary
-                        items={getPartnerOrderItemsForOrder(partnerOrder.id, partnerOrderItems)}
-                      />
-                    </td>
-                    <td>
-                      <AddressWithCoordinates
-                        coordinates={formatCoordinates(
-                          partnerOrder.delivery_lat,
-                          partnerOrder.delivery_lng
-                        )}
-                        label={partnerOrder.delivery_address || 'No address'}
-                      />
-                    </td>
-                    <td>{formatCurrency(Number(partnerOrder.subtotal ?? 0))}</td>
-                    <td>{formatCurrency(Number(partnerOrder.delivery_fee ?? 0))}</td>
-                    <td>{formatCurrency(Number(partnerOrder.total_amount ?? 0))}</td>
-                    <td>{toTitleCase(partnerOrder.payment_method || 'cash')}</td>
-                    <td>{getRiderName(partnerOrder.assigned_rider_id, riders)}</td>
-                    <td>
-                      <select
-                        className="rider-select"
-                        disabled={updatingPartnerOrderId === partnerOrder.id}
-                        value={partnerOrder.assigned_rider_id ?? ''}
-                        onChange={(event) =>
-                          handlePartnerOrderRiderAssignment(partnerOrder.id, event.target.value)
-                        }>
-                        <option value="">Unassigned</option>
-                        {riders.map((rider) => (
-                          <option key={rider.id} value={rider.id}>
-                            {rider.full_name}
-                          </option>
-                        ))}
-                      </select>
-                    </td>
-                    <td>
-                      <select
-                        className="food-status-select"
-                        disabled={updatingPartnerOrderId === partnerOrder.id}
-                        value={partnerOrder.status}
-                        onChange={(event) =>
-                          handlePartnerOrderStatusChange(
-                            partnerOrder.id,
-                            event.target.value as PartnerOrderStatus
-                          )
-                        }>
-                        {partnerOrderStatuses.map((status) => (
-                          <option key={status} value={status}>
-                            {partnerOrderStatusLabels[status]}
-                          </option>
-                        ))}
-                      </select>
-                    </td>
-                    <td>{formatDate(partnerOrder.created_at)}</td>
-                  </tr>
-                ))}
+                {partnerOrders.map((partnerOrder) => {
+                  const locationLinks = getPartnerOrderLocationLinks(partnerOrder, businessPartners);
+
+                  return (
+                    <tr key={partnerOrder.id}>
+                      <td>{getPartnerName(partnerOrder.partner_id, businessPartners)}</td>
+                      <td>{partnerOrder.customer_name || 'Customer'}</td>
+                      <td>{partnerOrder.customer_phone || 'No phone'}</td>
+                      <td>
+                        <OrderItemsSummary
+                          items={getPartnerOrderItemsForOrder(partnerOrder.id, partnerOrderItems)}
+                        />
+                      </td>
+                      <td>
+                        <AddressWithCoordinates
+                          coordinates={formatCoordinates(
+                            partnerOrder.delivery_lat,
+                            partnerOrder.delivery_lng
+                          )}
+                          label={partnerOrder.delivery_address || 'No address'}
+                          mapLinks={locationLinks}
+                        />
+                      </td>
+                      <td>{formatCurrency(Number(partnerOrder.subtotal ?? 0))}</td>
+                      <td>{formatCurrency(Number(partnerOrder.delivery_fee ?? 0))}</td>
+                      <td>{formatCurrency(Number(partnerOrder.total_amount ?? 0))}</td>
+                      <td>{toTitleCase(partnerOrder.payment_method || 'cash')}</td>
+                      <td>{getRiderName(partnerOrder.assigned_rider_id, riders)}</td>
+                      <td>
+                        <select
+                          className="rider-select"
+                          disabled={updatingPartnerOrderId === partnerOrder.id}
+                          value={partnerOrder.assigned_rider_id ?? ''}
+                          onChange={(event) =>
+                            handlePartnerOrderRiderAssignment(partnerOrder.id, event.target.value)
+                          }>
+                          <option value="">Unassigned</option>
+                          {riders.map((rider) => (
+                            <option key={rider.id} value={rider.id}>
+                              {rider.full_name}
+                            </option>
+                          ))}
+                        </select>
+                      </td>
+                      <td>
+                        <select
+                          className="food-status-select"
+                          disabled={updatingPartnerOrderId === partnerOrder.id}
+                          value={partnerOrder.status}
+                          onChange={(event) =>
+                            handlePartnerOrderStatusChange(
+                              partnerOrder.id,
+                              event.target.value as PartnerOrderStatus
+                            )
+                          }>
+                          {partnerOrderStatuses.map((status) => (
+                            <option key={status} value={status}>
+                              {partnerOrderStatusLabels[status]}
+                            </option>
+                          ))}
+                        </select>
+                      </td>
+                      <td>{formatDate(partnerOrder.created_at)}</td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
@@ -3400,14 +3414,28 @@ function OrderItemsSummary({ items }: { items: AdminPartnerOrderItem[] }) {
 function AddressWithCoordinates({
   coordinates,
   label,
+  mapLinks,
 }: {
   coordinates: string | null;
   label: string;
+  mapLinks?: PartnerOrderLocationLinks | null;
 }) {
   return (
     <div className="address-cell">
       <span>{label}</span>
       {coordinates ? <small>{coordinates}</small> : null}
+      {mapLinks ? (
+        <div className="map-link-row">
+          <a href={mapLinks.deliveryUrl} rel="noreferrer" target="_blank">
+            Open Delivery Location
+          </a>
+          {mapLinks.routeUrl ? (
+            <a href={mapLinks.routeUrl} rel="noreferrer" target="_blank">
+              Open Route
+            </a>
+          ) : null}
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -3533,6 +3561,65 @@ function formatCoordinates(latitude: number | null, longitude: number | null) {
   }
 
   return `${latitude.toFixed(6)}, ${longitude.toFixed(6)}`;
+}
+
+type CoordinatePair = {
+  latitude: number;
+  longitude: number;
+};
+
+type PartnerOrderLocationLinks = {
+  deliveryUrl: string;
+  routeUrl: string | null;
+};
+
+function getPartnerOrderLocationLinks(
+  partnerOrder: AdminPartnerOrder,
+  partners: AdminBusinessPartner[]
+): PartnerOrderLocationLinks | null {
+  const destination = getCoordinatePair(partnerOrder.delivery_lat, partnerOrder.delivery_lng);
+
+  if (!destination) {
+    return null;
+  }
+
+  const partner = partners.find((nextPartner) => nextPartner.id === partnerOrder.partner_id);
+  const origin = getCoordinatePair(partner?.latitude, partner?.longitude);
+
+  return {
+    deliveryUrl: getGoogleMapsSearchUrl(destination),
+    routeUrl: origin ? getGoogleMapsDirectionsUrl(origin, destination) : null,
+  };
+}
+
+function getCoordinatePair(
+  latitude: number | string | null | undefined,
+  longitude: number | string | null | undefined
+): CoordinatePair | null {
+  const nextLatitude = Number(latitude);
+  const nextLongitude = Number(longitude);
+
+  if (!Number.isFinite(nextLatitude) || !Number.isFinite(nextLongitude)) {
+    return null;
+  }
+
+  return {
+    latitude: nextLatitude,
+    longitude: nextLongitude,
+  };
+}
+
+function getGoogleMapsSearchUrl(point: CoordinatePair) {
+  return `https://www.google.com/maps/search/?api=1&query=${point.latitude},${point.longitude}`;
+}
+
+function getGoogleMapsDirectionsUrl(origin: CoordinatePair, destination: CoordinatePair) {
+  return (
+    'https://www.google.com/maps/dir/?api=1' +
+    `&origin=${origin.latitude},${origin.longitude}` +
+    `&destination=${destination.latitude},${destination.longitude}` +
+    '&travelmode=driving'
+  );
 }
 
 function getRiderName(riderId: string | null, riders: AdminRider[]) {

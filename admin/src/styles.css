@@ -291,6 +291,29 @@ td {
   font-weight: 800;
 }
 
+.map-link-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.map-link-row a {
+  display: inline-flex;
+  min-height: 28px;
+  align-items: center;
+  border-radius: 999px;
+  padding: 0 9px;
+  background: #fff3d0;
+  color: #0b6b22;
+  font-size: 12px;
+  font-weight: 900;
+  text-decoration: none;
+}
+
+.map-link-row a:hover {
+  background: #e8f5ec;
+}
+
 .status-select,
 .rider-select,
 .food-status-select {
