@@ -560,6 +560,79 @@ export type Database = {
           },
         ];
       };
+      partner_delivery_rate_profiles: {
+        Row: {
+          base_fee: number;
+          base_km: number;
+          category_id: string | null;
+          created_at: string;
+          id: string;
+          is_active: boolean;
+          is_manual_quote: boolean;
+          minimum_fee: number;
+          name: string;
+          partner_id: string | null;
+          per_km_fee: number;
+          service_fee: number;
+          service_type: string;
+          subcategory_id: string | null;
+          updated_at: string;
+        };
+        Insert: {
+          base_fee?: number;
+          base_km?: number;
+          category_id?: string | null;
+          created_at?: string;
+          id?: string;
+          is_active?: boolean;
+          is_manual_quote?: boolean;
+          minimum_fee?: number;
+          name: string;
+          partner_id?: string | null;
+          per_km_fee?: number;
+          service_fee?: number;
+          service_type: string;
+          subcategory_id?: string | null;
+          updated_at?: string;
+        };
+        Update: {
+          base_fee?: number;
+          base_km?: number;
+          category_id?: string | null;
+          created_at?: string;
+          id?: string;
+          is_active?: boolean;
+          is_manual_quote?: boolean;
+          minimum_fee?: number;
+          name?: string;
+          partner_id?: string | null;
+          per_km_fee?: number;
+          service_fee?: number;
+          service_type?: string;
+          subcategory_id?: string | null;
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'partner_delivery_rate_profiles_category_id_fkey';
+            columns: ['category_id'];
+            referencedRelation: 'service_categories';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'partner_delivery_rate_profiles_partner_id_fkey';
+            columns: ['partner_id'];
+            referencedRelation: 'business_partners';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'partner_delivery_rate_profiles_subcategory_id_fkey';
+            columns: ['subcategory_id'];
+            referencedRelation: 'service_subcategories';
+            referencedColumns: ['id'];
+          },
+        ];
+      };
       partner_users: {
         Row: {
           created_at: string;
@@ -1312,10 +1385,13 @@ export type Database = {
           p_delivery_address: string | null;
           p_delivery_lat: number | null;
           p_delivery_lng: number | null;
+          p_delivery_fee?: number | null;
           p_items: Json;
           p_notes: string | null;
           p_partner_id: string;
           p_payment_method: string | null;
+          p_service_fee?: number | null;
+          p_total_amount?: number | null;
         };
         Returns: Json;
       };

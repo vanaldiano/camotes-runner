@@ -286,6 +286,12 @@ function ActivityCard({
           Ref {item.id.slice(0, 8)} - {toTitleCase(item.paymentMethod || 'cash')}
         </Text>
       ) : null}
+      {item.kind === 'partner' ? (
+        <>
+          <Text style={styles.secondary}>{getPartnerActivityRiderText(item.trackingRecord)}</Text>
+          <Text style={styles.secondary}>{getPartnerActivityEtaText(item.trackingRecord)}</Text>
+        </>
+      ) : null}
       {item.kind === 'partner' && item.trackingRecord.is_stale ? (
         <Text style={styles.secondary}>
           Status may be updating. Pulling latest details when available.
@@ -299,7 +305,7 @@ function ActivityCard({
         </View>
         {isActive || item.kind === 'partner' ? (
           <PrimaryButton
-            title={item.kind === 'partner' ? 'View Details' : 'Track'}
+            title={item.kind === 'partner' ? 'Track Order' : 'Track'}
             style={styles.trackButton}
             onPress={() => onTrackItem(item)}
           />
@@ -416,6 +422,34 @@ function getActivityStatusColor(item: UnifiedActivityItem) {
     default:
       return BrandColors.yellow;
   }
+}
+
+function getPartnerActivityRiderText(order: PartnerOrderWithPartner) {
+  if (order.assigned_rider_id) {
+    return `Rider: Assigned${order.rider_status ? ` - ${toTitleCase(order.rider_status)}` : ''}`;
+  }
+
+  return 'Rider: Waiting for assignment';
+}
+
+function getPartnerActivityEtaText(order: PartnerOrderWithPartner) {
+  if (order.status === 'completed') {
+    return 'ETA: Delivered';
+  }
+
+  if (order.status === 'cancelled') {
+    return 'ETA: Cancelled';
+  }
+
+  if (!order.assigned_rider_id) {
+    return 'ETA: Waiting for rider';
+  }
+
+  if (order.status === 'picked_up' || order.status === 'on_the_way') {
+    return 'ETA: Live delivery ETA in details';
+  }
+
+  return 'ETA: Pickup ETA in details';
 }
 
 function getSampleActivityItems(): UnifiedActivityItem[] {

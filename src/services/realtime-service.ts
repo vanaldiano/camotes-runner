@@ -165,6 +165,38 @@ export function subscribeToRiderLocationForFoodOrder(
   };
 }
 
+export function subscribeToRiderLocationForPartnerOrder(
+  partnerOrderId: string,
+  onRiderLocationChange: (location: RiderLocation) => void,
+  onFallbackNeeded?: RealtimeFallback
+) {
+  const channel = supabase
+    .channel(`partner-rider-location-${partnerOrderId}`)
+    .on(
+      'postgres_changes',
+      {
+        event: '*',
+        filter: `partner_order_id=eq.${partnerOrderId}`,
+        schema: 'public',
+        table: 'rider_locations',
+      },
+      (payload) => {
+        if (payload.new && 'id' in payload.new) {
+          onRiderLocationChange(payload.new as RiderLocation);
+        }
+      }
+    )
+    .subscribe((status) => {
+      if (realtimeFailureStatuses.includes(status)) {
+        onFallbackNeeded?.();
+      }
+    });
+
+  return () => {
+    void supabase.removeChannel(channel);
+  };
+}
+
 export function subscribeToCustomerActivityChanges(
   onActivityChange: () => void,
   onFallbackNeeded?: RealtimeFallback

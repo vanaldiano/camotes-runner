@@ -23,6 +23,7 @@ export type CreatePartnerOrderInput = {
   customerName: string;
   customerPhone: string;
   deliveryAddress: string;
+  deliveryFee?: number | null;
   deliveryLat?: number | null;
   deliveryLng?: number | null;
   items: PartnerCartItem[];
@@ -30,6 +31,8 @@ export type CreatePartnerOrderInput = {
   partnerId: string;
   partnerName?: string | null;
   paymentMethod: string;
+  serviceFee?: number | null;
+  totalAmount?: number | null;
 };
 
 type LocalPartnerOrderReference = {
@@ -80,6 +83,7 @@ export async function createPartnerOrder(
     p_customer_name: input.customerName,
     p_customer_phone: input.customerPhone,
     p_delivery_address: input.deliveryAddress,
+    p_delivery_fee: normalizeAmount(input.deliveryFee),
     p_delivery_lat: normalizeCoordinate(input.deliveryLat),
     p_delivery_lng: normalizeCoordinate(input.deliveryLng),
     p_items: input.items.map((item) => ({
@@ -89,6 +93,8 @@ export async function createPartnerOrder(
     p_notes: input.notes,
     p_partner_id: input.partnerId,
     p_payment_method: input.paymentMethod,
+    p_service_fee: normalizeAmount(input.serviceFee),
+    p_total_amount: normalizeAmount(input.totalAmount),
   });
 
   if (error) {
@@ -290,6 +296,10 @@ function getPartnerDeliveryFee(deliveryFeeLabel: string | null) {
 
 function normalizeCoordinate(value: number | null | undefined) {
   return typeof value === 'number' && Number.isFinite(value) ? value : null;
+}
+
+function normalizeAmount(value: number | null | undefined) {
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : null;
 }
 
 async function withPartnerNames(orders: PartnerOrder[]): Promise<PartnerOrderWithPartner[]> {

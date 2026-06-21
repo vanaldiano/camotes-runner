@@ -8,15 +8,16 @@ import { ScreenHeader } from '@/components/screen-header';
 import { BrandColors } from '@/constants/brand';
 import { getCurrentAuthState } from '@/services/auth-service';
 import {
+  calculatePartnerDeliveryFee,
+  type PartnerDeliveryFeeCalculation,
+} from '@/services/partner-delivery-fee-service';
+import {
   formatLocationPoint,
   getCurrentLocationPoint,
   type LocationPoint,
 } from '@/services/location-service';
 import { usePartnerCart } from '@/services/partner-cart';
-import {
-  calculatePartnerOrderTotals,
-  createPartnerOrder,
-} from '@/services/partner-order-service';
+import { createPartnerOrder } from '@/services/partner-order-service';
 import { getBusinessPartnerById, type BusinessPartnerListItem } from '@/services/partner-service';
 import { hasSupabaseConfig } from '@/services/supabase';
 
@@ -65,15 +66,18 @@ export function PartnerCheckoutScreen({ partnerId }: PartnerCheckoutScreenProps)
   const [notes, setNotes] = useState('Please call when you arrive.');
   const [isSaving, setIsSaving] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
+  const [feeCalculation, setFeeCalculation] = useState<PartnerDeliveryFeeCalculation | null>(null);
+  const [feeMessage, setFeeMessage] = useState('');
   const isCurrentPartnerCart = cartPartnerId === partnerId;
   const visibleItems = useMemo(
     () => (isCurrentPartnerCart ? items : []),
     [isCurrentPartnerCart, items]
   );
-  const totals = useMemo(
-    () => calculatePartnerOrderTotals(visibleItems, partner),
-    [partner, visibleItems]
+  const subtotal = useMemo(
+    () => visibleItems.reduce((total, item) => total + item.price * item.quantity, 0),
+    [visibleItems]
   );
+  const totals = feeCalculation ?? getFallbackFeeCalculation(subtotal);
 
   useEffect(() => {
     let isMounted = true;
@@ -94,6 +98,45 @@ export function PartnerCheckoutScreen({ partnerId }: PartnerCheckoutScreenProps)
       isMounted = false;
     };
   }, [partnerId]);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    async function loadFeeCalculation() {
+      const nextCalculation = await calculatePartnerDeliveryFee({
+        categoryId: partner?.category_id ?? null,
+        deliveryLat: deliveryPoint?.latitude ?? null,
+        deliveryLng: deliveryPoint?.longitude ?? null,
+        partner,
+        partnerId,
+        subtotal,
+        subcategoryId: partner?.subcategory_id ?? null,
+      });
+
+      if (!isMounted) {
+        return;
+      }
+
+      setFeeCalculation(nextCalculation);
+      setFeeMessage(getFeeCalculationMessage(nextCalculation));
+    }
+
+    void loadFeeCalculation().catch((error) => {
+      if (__DEV__) {
+        console.warn('PARTNER_CHECKOUT_FEE_CALCULATION_FAILED', error);
+      }
+
+      if (isMounted) {
+        const fallback = getFallbackFeeCalculation(subtotal);
+        setFeeCalculation(fallback);
+        setFeeMessage('Using the default partner delivery fee for now.');
+      }
+    });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [deliveryPoint, partner, partnerId, subtotal]);
 
   async function handleUseCurrentLocation() {
     if (isLocating) {
@@ -171,6 +214,7 @@ export function PartnerCheckoutScreen({ partnerId }: PartnerCheckoutScreenProps)
         customerName: customerName.trim(),
         customerPhone: customerPhone.trim(),
         deliveryAddress: deliveryAddress.trim(),
+        deliveryFee: totals.deliveryFee,
         deliveryLat: deliveryPoint?.latitude ?? null,
         deliveryLng: deliveryPoint?.longitude ?? null,
         items: visibleItems,
@@ -178,6 +222,8 @@ export function PartnerCheckoutScreen({ partnerId }: PartnerCheckoutScreenProps)
         partnerId,
         partnerName: partner?.name ?? partnerName ?? 'Partner shop',
         paymentMethod: 'cash',
+        serviceFee: totals.serviceFee,
+        totalAmount: totals.totalAmount,
       });
 
       clearCart();
@@ -304,8 +350,15 @@ export function PartnerCheckoutScreen({ partnerId }: PartnerCheckoutScreenProps)
         </View>
         <View style={styles.summaryDivider} />
         <SummaryRow label="Subtotal" value={formatCurrency(totals.subtotal)} />
+        {typeof totals.distanceKm === 'number' ? (
+          <SummaryRow label="Distance" value={`${totals.distanceKm.toFixed(1)} km`} />
+        ) : null}
         <SummaryRow label="Delivery fee" value={formatCurrency(totals.deliveryFee)} />
+        {totals.serviceFee > 0 ? (
+          <SummaryRow label="Service fee" value={formatCurrency(totals.serviceFee)} />
+        ) : null}
         <SummaryRow highlighted label="Total" value={formatCurrency(totals.totalAmount)} />
+        {feeMessage ? <Text style={styles.feeMessage}>{feeMessage}</Text> : null}
       </CheckoutCard>
 
       {errorMessage ? <Text style={styles.errorText}>{errorMessage}</Text> : null}
@@ -317,6 +370,32 @@ export function PartnerCheckoutScreen({ partnerId }: PartnerCheckoutScreenProps)
       />
     </AppScreen>
   );
+}
+
+function getFallbackFeeCalculation(subtotal: number): PartnerDeliveryFeeCalculation {
+  const deliveryFee = 50;
+
+  return {
+    deliveryFee,
+    distanceKm: null,
+    isManualQuote: false,
+    rateProfile: null,
+    serviceFee: 0,
+    subtotal,
+    totalAmount: subtotal + deliveryFee,
+  };
+}
+
+function getFeeCalculationMessage(calculation: PartnerDeliveryFeeCalculation) {
+  if (calculation.isManualQuote) {
+    return 'Delivery fee will be confirmed by admin or the partner shop.';
+  }
+
+  if (typeof calculation.distanceKm === 'number') {
+    return `Delivery fee uses ${calculation.rateProfile?.name ?? 'partner'} distance rates.`;
+  }
+
+  return 'Delivery fee uses the default rate until shop and delivery coordinates are both available.';
 }
 
 function CheckoutCard({ children, title }: { children: React.ReactNode; title: string }) {
@@ -416,6 +495,12 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     lineHeight: 20,
     textAlign: 'center',
+  },
+  feeMessage: {
+    color: BrandColors.mutedInk,
+    fontSize: 12,
+    fontWeight: '700',
+    lineHeight: 18,
   },
   highlightedText: {
     color: BrandColors.green,

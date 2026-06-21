@@ -38,6 +38,7 @@ export type AdminPartnerOrderNotification = Tables<'partner_order_notifications'
 export type AdminPartnerProduct = Tables<'partner_products'>;
 export type AdminPartnerOrder = Tables<'partner_orders'>;
 export type AdminPartnerOrderItem = Tables<'partner_order_items'>;
+export type AdminPartnerDeliveryRateProfile = Tables<'partner_delivery_rate_profiles'>;
 export type AdminFoodOrder = Tables<'food_orders'> & {
   latest_rider_location_updated_at?: string | null;
 };
@@ -112,6 +113,21 @@ export type PartnerProductInput = Pick<
   | 'sort_order'
   | 'subcategory_id'
   | 'unit_label'
+>;
+export type PartnerDeliveryRateProfileInput = Pick<
+  TablesInsert<'partner_delivery_rate_profiles'>,
+  | 'base_fee'
+  | 'base_km'
+  | 'category_id'
+  | 'is_active'
+  | 'is_manual_quote'
+  | 'minimum_fee'
+  | 'name'
+  | 'partner_id'
+  | 'per_km_fee'
+  | 'service_fee'
+  | 'service_type'
+  | 'subcategory_id'
 >;
 
 const restaurantImageBucket = 'restaurant-images';
@@ -701,6 +717,42 @@ export async function togglePartnerProductAvailability(
   isAvailable: boolean
 ) {
   return updatePartnerProduct(productId, { is_available: isAvailable });
+}
+
+export async function getPartnerDeliveryRateProfiles() {
+  const { data, error } = await supabase
+    .from('partner_delivery_rate_profiles')
+    .select('*')
+    .order('service_type', { ascending: true })
+    .order('name', { ascending: true });
+
+  if (error) {
+    throw error;
+  }
+
+  return data ?? [];
+}
+
+export async function updatePartnerDeliveryRateProfile(
+  profileId: string,
+  input: TablesUpdate<'partner_delivery_rate_profiles'>
+) {
+  const { data, error } = await supabase
+    .from('partner_delivery_rate_profiles')
+    .update({ ...input, updated_at: new Date().toISOString() })
+    .eq('id', profileId)
+    .select('*')
+    .maybeSingle();
+
+  if (error) {
+    throw error;
+  }
+
+  if (!data) {
+    throw new Error(`Partner delivery rate profile ${profileId} was not found.`);
+  }
+
+  return data;
 }
 
 export async function createRestaurant(input: RestaurantInput) {
