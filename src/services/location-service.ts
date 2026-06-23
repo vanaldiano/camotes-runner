@@ -11,6 +11,8 @@ const CURRENT_LOCATION_TIMEOUT_MS = 15000;
 const LAST_KNOWN_LOCATION_MAX_AGE_MS = 10000;
 const REVERSE_GEOCODE_TIMEOUT_MS = 10000;
 const FALLBACK_LOCATION_LABEL = 'Selected location';
+const CURRENT_LOCATION_UNAVAILABLE_MESSAGE =
+  'We could not get your location. Please choose a pickup location or enter it manually.';
 
 type CurrentLocationOptions = Location.LocationOptions & {
   maximumAge?: number;
@@ -35,7 +37,7 @@ export async function getCurrentLocationPoint(): Promise<LocationPoint> {
   const lastKnownPosition = await Location.getLastKnownPositionAsync({
     maxAge: LAST_KNOWN_LOCATION_MAX_AGE_MS,
   }).catch((error: unknown) => {
-    console.warn('[Location] Last known location failure', getErrorMessage(error));
+    logLocationDebug('[Location] Last known location unavailable', getErrorMessage(error));
     return null;
   });
 
@@ -56,9 +58,9 @@ export async function getCurrentLocationPoint(): Promise<LocationPoint> {
   const currentPosition = await withTimeout(
     Location.getCurrentPositionAsync(currentLocationOptions),
     CURRENT_LOCATION_TIMEOUT_MS,
-    'Location request timed out. Please type the address manually or try again.'
+    CURRENT_LOCATION_UNAVAILABLE_MESSAGE
   ).catch((error: unknown) => {
-    console.warn('[Location] Location request failure', getErrorMessage(error));
+    logLocationDebug('[Location] Location request unavailable', getErrorMessage(error));
     throw error;
   });
 
@@ -175,7 +177,7 @@ async function getReverseGeocodeLabel(point: LocationPoint) {
     console.log('[Location] Reverse geocode success', label);
     return label;
   } catch (error) {
-    console.warn('[Location] Reverse geocode failure', getErrorMessage(error));
+    logLocationDebug('[Location] Reverse geocode unavailable', getErrorMessage(error));
     return FALLBACK_LOCATION_LABEL;
   }
 }
@@ -239,4 +241,10 @@ function getErrorMessage(error: unknown) {
   }
 
   return 'Unknown location error';
+}
+
+function logLocationDebug(message: string, details: unknown) {
+  if (__DEV__) {
+    console.log(message, details);
+  }
 }

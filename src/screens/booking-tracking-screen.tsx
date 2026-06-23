@@ -1,5 +1,5 @@
 import { router } from 'expo-router';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type MutableRefObject } from 'react';
 import { Alert, StyleSheet, Text, View } from 'react-native';
 
 import { AppIcon } from '@/components/app-icon';
@@ -57,6 +57,7 @@ export function BookingTrackingScreen() {
   const [syncMessage, setSyncMessage] = useState('');
   const [liveSupabaseBooking, setLiveSupabaseBooking] = useState<SupabaseBooking | null>(null);
   const [riderLocation, setRiderLocation] = useState<RiderLocation | null>(null);
+  const riderLocationFetchLogKeys = useRef(new Set<string>());
   const isCancelled = booking?.status === 'Cancelled';
   const isCompleted = booking?.status === 'Completed';
   const isFinalStatus = Boolean(isCancelled || isCompleted);
@@ -279,12 +280,34 @@ export function BookingTrackingScreen() {
 
     async function syncRiderLocation() {
       try {
+        logRiderLocationFetchOnce(
+          riderLocationFetchLogKeys,
+          `fetch:${supabaseBookingId}`,
+          'RIDE_LOCATION_FETCH_BY_BOOKING',
+          { bookingId: supabaseBookingId }
+        );
         const latestLocation = await getLatestRiderLocationForBooking(supabaseBookingId);
 
         if (isMounted) {
           setRiderLocation(latestLocation);
         }
-      } catch {
+
+        if (!latestLocation) {
+          logRiderLocationFetchOnce(
+            riderLocationFetchLogKeys,
+            `not-found:${supabaseBookingId}`,
+            'RIDE_LOCATION_NOT_FOUND',
+            { bookingId: supabaseBookingId }
+          );
+        }
+      } catch (error) {
+        if (__DEV__) {
+          console.warn('RIDE_LOCATION_FETCH_FAILED', {
+            bookingId: supabaseBookingId,
+            error,
+          });
+        }
+
         if (isMounted) {
           setSyncMessage('Rider location is temporarily unavailable. Status tracking still works.');
         }
@@ -627,6 +650,20 @@ function showCustomerMapOpenFailure(error: unknown) {
     'Unable to open Google Maps',
     'Unable to open Google Maps. Please check if Maps or a browser is installed.'
   );
+}
+
+function logRiderLocationFetchOnce(
+  logKeysRef: MutableRefObject<Set<string>>,
+  key: string,
+  label: string,
+  details: Record<string, unknown>
+) {
+  if (!__DEV__ || logKeysRef.current.has(key)) {
+    return;
+  }
+
+  logKeysRef.current.add(key);
+  console.log(label, details);
 }
 
 function formatDateTime(value: string) {

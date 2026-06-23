@@ -2,15 +2,14 @@ import { router, useFocusEffect } from 'expo-router';
 import { useCallback, useMemo, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 
-import { AppIcon } from '@/components/app-icon';
 import { AppScreen } from '@/components/app-screen';
+import { DeliveryTrackingCard } from '@/components/delivery-tracking-card';
 import { PrimaryButton } from '@/components/primary-button';
 import { ScreenHeader } from '@/components/screen-header';
 import { BrandColors } from '@/constants/brand';
 import {
   calculateDistanceKm,
   estimateEtaMinutes,
-  formatDistance,
   formatEta,
 } from '@/services/eta-service';
 import {
@@ -48,6 +47,13 @@ const partnerTimelineStatuses: PartnerOrderStatus[] = [
   'picked_up',
   'on_the_way',
   'completed',
+];
+const activePartnerStatuses: PartnerOrderStatus[] = [
+  'pending',
+  'accepted',
+  'preparing',
+  'picked_up',
+  'on_the_way',
 ];
 
 export function PartnerOrderDetailScreen({ orderId }: PartnerOrderDetailScreenProps) {
@@ -157,32 +163,72 @@ export function PartnerOrderDetailScreen({ orderId }: PartnerOrderDetailScreenPr
   const riderToShopRouteUrl = getGoogleMapsDirectionsUrl(riderPoint, partnerPoint);
   const riderToDeliveryRouteUrl = getGoogleMapsDirectionsUrl(riderPoint, deliveryPoint);
   const deliveryLocationUrl = getSafeGoogleMapsSearchUrl(deliveryPoint, order?.delivery_address ?? undefined);
+  const isWaitingForPartnerRider = Boolean(
+    order &&
+      currentStatus !== 'pending' &&
+      activePartnerStatuses.includes(currentStatus) &&
+      !order.assigned_rider_id
+  );
+  const isWaitingForPartnerRiderLocation = Boolean(
+    order?.assigned_rider_id &&
+      activePartnerStatuses.includes(currentStatus) &&
+      !riderLocation
+  );
 
   return (
     <AppScreen>
       <ScreenHeader showHomeButton title="Partner order" />
-
-      <View style={styles.statusHero}>
-        <View style={styles.statusHeader}>
-          <AppIcon
-            backgroundColor={BrandColors.yellow}
-            color={BrandColors.darkGreen}
-            name={{ ios: 'shippingbox.fill', android: 'local_shipping', web: 'local_shipping' }}
-            size={34}
-            style={styles.heroIcon}
-          />
-          <View style={styles.statusCopy}>
-            <Text style={styles.statusLabel}>Partner Order</Text>
-            <Text style={styles.statusTitle}>{toPartnerOrderStatusLabel(currentStatus)}</Text>
-          </View>
-        </View>
-      </View>
 
       {isLoading ? <Text style={styles.message}>Loading order details...</Text> : null}
       {message ? <Text style={styles.message}>{message}</Text> : null}
       {order?.is_stale ? (
         <Text style={styles.message}>Showing saved order reference while latest status refreshes.</Text>
       ) : null}
+
+      <DeliveryTrackingCard
+        currentStepKey={currentStatus}
+        distanceKm={trackingSummary.distanceKm}
+        etaPrimary={trackingSummary.primary}
+        etaMinutes={trackingSummary.etaMinutes}
+        etaSecondary={trackingSummary.secondary}
+        isRefreshing={isLoading}
+        isWaitingForLocation={isWaitingForPartnerRiderLocation}
+        isWaitingForRider={isWaitingForPartnerRider}
+        lastUpdated={riderLocation?.updated_at ? formatDateTime(riderLocation.updated_at) : null}
+        mapActions={[
+          ...(shouldShowPartnerShopRoute(currentStatus) && riderToShopRouteUrl
+            ? [
+                {
+                  label: 'Open Pickup Route',
+                  onPress: () => void openMapUrl(riderToShopRouteUrl),
+                },
+              ]
+            : []),
+          ...(shouldShowPartnerDeliveryRoute(currentStatus) && riderToDeliveryRouteUrl
+            ? [
+                {
+                  label: 'Open Delivery Route',
+                  onPress: () => void openMapUrl(riderToDeliveryRouteUrl),
+                },
+              ]
+            : []),
+          ...(deliveryLocationUrl
+            ? [
+                {
+                  label: 'View Delivery Location',
+                  onPress: () => void openMapUrl(deliveryLocationUrl),
+                },
+              ]
+            : []),
+        ]}
+        riderName={order?.assigned_rider_id ? 'Assigned rider' : null}
+        routeTarget={shouldShowPartnerShopRoute(currentStatus) ? 'shop' : 'delivery'}
+        serviceLabel="Partner delivery"
+        statusLabel={getFriendlyPartnerTrackingTitle(currentStatus)}
+        statusMessage={getTrackingStateMessage(currentStatus)}
+        steps={getPartnerDeliverySteps(currentStatus)}
+        onRefresh={() => void handleManualRefresh()}
+      />
 
       <DetailCard title="Order Details">
         <DetailRow label="Shop" value={order?.partner_name ?? 'Partner shop'} />
@@ -191,72 +237,6 @@ export function PartnerOrderDetailScreen({ orderId }: PartnerOrderDetailScreenPr
         <DetailRow label="Delivery address" value={order?.delivery_address ?? 'To be confirmed'} />
         <DetailRow label="Payment" value={toTitleCase(order?.payment_method ?? 'cash')} />
         <DetailRow label="Total" value={formatCurrency(Number(order?.total_amount ?? 0))} />
-      </DetailCard>
-
-      <DetailCard title="Assigned Rider">
-        <DetailRow label="Rider" value={order?.assigned_rider_id ? 'Assigned' : 'Waiting for rider'} />
-        <DetailRow label="Rider status" value={toTitleCase(order?.rider_status ?? 'not_started')} />
-        <Text style={styles.emptyText}>{getTrackingStateMessage(currentStatus)}</Text>
-      </DetailCard>
-
-      <DetailCard title="Live ETA">
-        <View style={styles.etaBox}>
-          <Text style={styles.etaLabel}>{trackingSummary.label}</Text>
-          <Text style={styles.etaPrimary}>{trackingSummary.primary}</Text>
-          <Text style={styles.etaSecondary}>{trackingSummary.secondary}</Text>
-        </View>
-      </DetailCard>
-
-      <DetailCard title="Rider Live Location">
-        {riderPoint ? (
-          <>
-            <DetailRow label="Rider latitude" value={riderPoint.latitude.toFixed(6)} />
-            <DetailRow label="Rider longitude" value={riderPoint.longitude.toFixed(6)} />
-            <DetailRow label="Last updated" value={formatDateTime(riderLocation?.updated_at)} />
-          </>
-        ) : (
-          <Text style={styles.emptyText}>
-            Waiting for rider location. Tracking will appear once the rider starts sharing during pickup or delivery.
-          </Text>
-        )}
-      </DetailCard>
-
-      <DetailCard title="Map Actions">
-        <View style={styles.mapActions}>
-          {riderPoint ? (
-            <PrimaryButton
-              title="Open Rider Location"
-              variant="secondary"
-              onPress={() => void openRiderLocationMap(riderPoint)}
-            />
-          ) : null}
-          {riderToShopRouteUrl ? (
-            <PrimaryButton
-              title="Open Rider to Shop Route"
-              variant="secondary"
-              onPress={() => void openMapUrl(riderToShopRouteUrl)}
-            />
-          ) : null}
-          {riderToDeliveryRouteUrl ? (
-            <PrimaryButton
-              title="Open Rider to Delivery Route"
-              variant="secondary"
-              onPress={() => void openMapUrl(riderToDeliveryRouteUrl)}
-            />
-          ) : null}
-          {deliveryLocationUrl ? (
-            <PrimaryButton
-              title="Open Delivery Location"
-              variant="secondary"
-              onPress={() => void openMapUrl(deliveryLocationUrl)}
-            />
-          ) : null}
-          {!riderPoint && !deliveryLocationUrl ? (
-            <Text style={styles.emptyText}>
-              Map links will appear when rider or delivery coordinates are available.
-            </Text>
-          ) : null}
-        </View>
       </DetailCard>
 
       <DetailCard title="Items">
@@ -274,19 +254,6 @@ export function PartnerOrderDetailScreen({ orderId }: PartnerOrderDetailScreenPr
             ))}
           </View>
         )}
-      </DetailCard>
-
-      <DetailCard title="Status Timeline">
-        <View style={styles.timeline}>
-          {(currentStatus === 'cancelled' ? ['cancelled'] : partnerTimelineStatuses).map((status, index, list) => (
-            <TimelineItem
-              currentStatus={currentStatus}
-              isLast={index === list.length - 1}
-              key={status}
-              status={status as PartnerOrderStatus}
-            />
-          ))}
-        </View>
       </DetailCard>
 
       <PrimaryButton
@@ -319,41 +286,6 @@ function DetailRow({ label, value }: { label: string; value: string }) {
   );
 }
 
-function TimelineItem({
-  currentStatus,
-  isLast,
-  status,
-}: {
-  currentStatus: PartnerOrderStatus;
-  isLast: boolean;
-  status: PartnerOrderStatus;
-}) {
-  const currentIndex = partnerTimelineStatuses.indexOf(currentStatus);
-  const statusIndex = partnerTimelineStatuses.indexOf(status);
-  const isCancelled = currentStatus === 'cancelled';
-  const isActive = status === currentStatus;
-  const isComplete = !isCancelled && statusIndex >= 0 && currentIndex >= 0 && statusIndex < currentIndex;
-  const activeColor = isCancelled ? BrandColors.danger : BrandColors.green;
-  const dotColor = isActive || isComplete ? activeColor : BrandColors.border;
-
-  return (
-    <View style={styles.timelineItem}>
-      <View style={styles.timelineRail}>
-        <View style={[styles.timelineDot, { backgroundColor: dotColor }]} />
-        {!isLast ? (
-          <View style={[styles.timelineLine, (isActive || isComplete) && styles.timelineLineComplete]} />
-        ) : null}
-      </View>
-      <View style={[styles.timelineCard, isActive && styles.activeTimelineCard]}>
-        <Text style={[styles.timelineStatus, isActive && styles.activeTimelineStatus]}>
-          {toPartnerOrderStatusLabel(status)}
-        </Text>
-        <Text style={styles.timelineDescription}>{getPartnerOrderStatusDescription(status)}</Text>
-      </View>
-    </View>
-  );
-}
-
 function toPartnerOrderStatusLabel(status: PartnerOrderStatus) {
   switch (status) {
     case 'pending':
@@ -373,20 +305,57 @@ function toPartnerOrderStatusLabel(status: PartnerOrderStatus) {
   }
 }
 
-function getPartnerOrderStatusDescription(status: PartnerOrderStatus) {
+function getFriendlyPartnerTrackingTitle(status: PartnerOrderStatus) {
   switch (status) {
     case 'pending':
-      return 'Your order was sent to the partner shop.';
+      return 'Order sent';
     case 'accepted':
-      return 'The partner shop accepted your order.';
+      return 'Shop accepted your order';
     case 'preparing':
-      return 'The partner shop is preparing your items.';
+      return 'Items are being prepared';
     case 'picked_up':
-      return 'Your order is ready or has been picked up.';
+      return 'Rider picked up your order';
     case 'on_the_way':
-      return 'Your order is on the way.';
+      return 'Rider is on the way';
     case 'completed':
-      return 'Partner order completed.';
+      return 'Order delivered';
+    case 'cancelled':
+      return 'Order cancelled';
+  }
+}
+
+function getPartnerDeliverySteps(currentStatus: PartnerOrderStatus) {
+  if (currentStatus === 'cancelled') {
+    return [
+      {
+        description: 'This partner order was cancelled.',
+        key: 'cancelled',
+        label: 'Cancelled',
+      },
+    ];
+  }
+
+  return partnerTimelineStatuses.map((status) => ({
+    description: getPartnerDeliveryStepDescription(status),
+    key: status,
+    label: toPartnerOrderStatusLabel(status),
+  }));
+}
+
+function getPartnerDeliveryStepDescription(status: PartnerOrderStatus) {
+  switch (status) {
+    case 'pending':
+      return 'Your order has been sent to the shop.';
+    case 'accepted':
+      return 'The shop is preparing your items.';
+    case 'preparing':
+      return 'Your items are being packed by the shop.';
+    case 'picked_up':
+      return 'Your rider has picked up your items.';
+    case 'on_the_way':
+      return 'Your rider is heading to your delivery address.';
+    case 'completed':
+      return 'Your order has been delivered successfully.';
     case 'cancelled':
       return 'This partner order was cancelled.';
   }
@@ -420,16 +389,6 @@ function getLocationPoint(
   }
 
   return { latitude, longitude };
-}
-
-async function openRiderLocationMap(riderPoint: LocationPoint) {
-  const url = getSafeGoogleMapsSearchUrl(riderPoint);
-
-  if (!url) {
-    return;
-  }
-
-  await openMapUrl(url);
 }
 
 async function openMapUrl(url: string) {
@@ -467,14 +426,18 @@ function getPartnerOrderTrackingSummary(
 ) {
   if (status === 'completed') {
     return {
+      distanceKm: null,
+      etaMinutes: null,
       label: 'Delivery complete',
-      primary: 'Completed',
-      secondary: 'Your partner order has been completed.',
+      primary: 'Delivered successfully',
+      secondary: 'Your order has been delivered successfully.',
     };
   }
 
   if (status === 'cancelled') {
     return {
+      distanceKm: null,
+      etaMinutes: null,
       label: 'Order cancelled',
       primary: 'Cancelled',
       secondary: 'This partner order was cancelled.',
@@ -483,16 +446,20 @@ function getPartnerOrderTrackingSummary(
 
   if (status === 'pending') {
     return {
+      distanceKm: null,
+      etaMinutes: null,
       label: 'Waiting for confirmation',
-      primary: 'Pending',
-      secondary: 'The partner shop is reviewing your order.',
+      primary: 'Order sent',
+      secondary: 'Your order has been sent to the shop.',
     };
   }
 
   if (!riderPoint) {
     return {
+      distanceKm: null,
+      etaMinutes: null,
       label: 'Live ETA',
-      primary: 'Waiting for rider location...',
+      primary: 'Waiting for rider location',
       secondary: 'ETA will update once the rider starts sharing location.',
     };
   }
@@ -504,9 +471,11 @@ function getPartnerOrderTrackingSummary(
 
   if (!target.point) {
     return {
+      distanceKm: null,
+      etaMinutes: null,
       label: target.label,
-      primary: 'ETA unavailable',
-      secondary: 'Coordinates are not available for this route yet.',
+      primary: 'Distance unavailable',
+      secondary: 'ETA will update soon.',
     };
   }
 
@@ -518,28 +487,85 @@ function getPartnerOrderTrackingSummary(
   );
   const etaMinutes = estimateEtaMinutes(distanceKm);
 
+  if (distanceKm === null || etaMinutes === null) {
+    return {
+      distanceKm: null,
+      etaMinutes: null,
+      label: target.label,
+      primary: 'Distance unavailable',
+      secondary: 'ETA will update soon.',
+    };
+  }
+
+  const distanceSummary = getCustomerDistanceSummary(distanceKm);
+  const primary =
+    status === 'accepted' || status === 'preparing'
+      ? 'Rider is heading to the shop'
+      : distanceSummary.primary;
+  const secondary =
+    status === 'accepted' || status === 'preparing'
+      ? `${distanceSummary.secondary} • Pickup ETA: ${formatEta(etaMinutes)}`
+      : `${distanceSummary.secondary} • ${formatEta(etaMinutes)}`;
+
   return {
+    distanceKm,
+    etaMinutes,
     label: target.label,
-    primary: formatEta(etaMinutes),
-    secondary: `${formatDistance(distanceKm)} away`,
+    primary,
+    secondary,
   };
+}
+
+function getCustomerDistanceSummary(distanceKm: number) {
+  if (distanceKm === 0) {
+    return {
+      primary: 'Rider is at the delivery area',
+      secondary: 'At delivery area',
+    };
+  }
+
+  if (distanceKm <= 0.1) {
+    return {
+      primary: 'Rider is almost there',
+      secondary: `${formatMeters(distanceKm)} m away`,
+    };
+  }
+
+  return {
+    primary: `Rider is ${distanceKm.toFixed(1)} km away`,
+    secondary: `${distanceKm.toFixed(1)} km away`,
+  };
+}
+
+function formatMeters(distanceKm: number) {
+  return Math.max(1, Math.round(distanceKm * 1000));
 }
 
 function getTrackingStateMessage(status: PartnerOrderStatus) {
   switch (status) {
     case 'pending':
-      return 'Waiting for confirmation from the partner shop.';
+      return 'Your order has been sent to the shop.';
     case 'accepted':
+      return 'The shop is preparing your items.';
     case 'preparing':
-      return 'The rider may be heading to the partner shop for pickup.';
+      return 'Your items are being packed by the shop.';
     case 'picked_up':
+      return 'Your rider has picked up your items.';
     case 'on_the_way':
-      return 'The rider is delivering your order to you.';
+      return 'Your rider is heading to your delivery address.';
     case 'completed':
-      return 'Delivery completed. Thank you for ordering with Camotes Runner.';
+      return 'Your order has been delivered successfully.';
     case 'cancelled':
       return 'This partner order was cancelled.';
   }
+}
+
+function shouldShowPartnerShopRoute(status: PartnerOrderStatus) {
+  return status === 'accepted' || status === 'preparing';
+}
+
+function shouldShowPartnerDeliveryRoute(status: PartnerOrderStatus) {
+  return status === 'picked_up' || status === 'on_the_way';
 }
 
 const styles = StyleSheet.create({

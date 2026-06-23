@@ -7,6 +7,7 @@ import { AppScreen } from '@/components/app-screen';
 import { PrimaryButton } from '@/components/primary-button';
 import { SectionHeader } from '@/components/section-header';
 import { BrandColors } from '@/constants/brand';
+import { estimateEtaMinutes, formatEta } from '@/services/eta-service';
 import { getCurrentAuthState } from '@/services/auth-service';
 import {
   getLatestBookings,
@@ -286,11 +287,8 @@ function ActivityCard({
           Ref {item.id.slice(0, 8)} - {toTitleCase(item.paymentMethod || 'cash')}
         </Text>
       ) : null}
-      {item.kind === 'partner' ? (
-        <>
-          <Text style={styles.secondary}>{getPartnerActivityRiderText(item.trackingRecord)}</Text>
-          <Text style={styles.secondary}>{getPartnerActivityEtaText(item.trackingRecord)}</Text>
-        </>
+      {item.kind !== 'ride' ? (
+        <Text style={styles.deliveryHint}>{getDeliveryActivityHint(item)}</Text>
       ) : null}
       {item.kind === 'partner' && item.trackingRecord.is_stale ? (
         <Text style={styles.secondary}>
@@ -424,32 +422,96 @@ function getActivityStatusColor(item: UnifiedActivityItem) {
   }
 }
 
-function getPartnerActivityRiderText(order: PartnerOrderWithPartner) {
-  if (order.assigned_rider_id) {
-    return `Rider: Assigned${order.rider_status ? ` - ${toTitleCase(order.rider_status)}` : ''}`;
+function getDeliveryActivityHint(item: Extract<UnifiedActivityItem, { kind: 'food' | 'partner' }>) {
+  if (item.kind === 'food') {
+    return getFoodActivityHint(item.trackingRecord);
   }
 
-  return 'Rider: Waiting for assignment';
+  return getPartnerActivityHint(item.trackingRecord);
 }
 
-function getPartnerActivityEtaText(order: PartnerOrderWithPartner) {
-  if (order.status === 'completed') {
-    return 'ETA: Delivered';
+function getFoodActivityHint(order: FoodOrderWithRestaurant) {
+  const status = order.status;
+
+  if (status === 'delivered') {
+    return 'Delivered';
   }
 
-  if (order.status === 'cancelled') {
-    return 'ETA: Cancelled';
+  if (status === 'cancelled') {
+    return 'Cancelled';
+  }
+
+  if (status === 'pending') {
+    return 'Waiting for order confirmation';
   }
 
   if (!order.assigned_rider_id) {
-    return 'ETA: Waiting for rider';
+    return 'Waiting for rider assignment';
   }
 
-  if (order.status === 'picked_up' || order.status === 'on_the_way') {
-    return 'ETA: Live delivery ETA in details';
+  if (status === 'on_the_way') {
+    const etaText = getActivityEtaText(order.delivery_distance_km);
+
+    return etaText ? `Rider is on the way - ${etaText}` : 'Rider is on the way';
   }
 
-  return 'ETA: Pickup ETA in details';
+  if (status === 'picked_up') {
+    const distanceText = getActivityDistanceText(order.delivery_distance_km);
+
+    return distanceText ? `Food picked up - ${distanceText}` : 'Food picked up';
+  }
+
+  return 'Food is being prepared';
+}
+
+function getPartnerActivityHint(order: PartnerOrderWithPartner) {
+  if (order.status === 'completed') {
+    return 'Delivered';
+  }
+
+  if (order.status === 'cancelled') {
+    return 'Cancelled';
+  }
+
+  if (order.status === 'pending') {
+    return 'Waiting for order confirmation';
+  }
+
+  if (!order.assigned_rider_id) {
+    return 'Waiting for rider assignment';
+  }
+
+  if (order.status === 'picked_up') {
+    return 'Items picked up';
+  }
+
+  if (order.status === 'on_the_way') {
+    return 'Rider is on the way';
+  }
+
+  return 'Shop is preparing your items';
+}
+
+function getActivityDistanceText(distanceKm: number | null | undefined) {
+  if (typeof distanceKm !== 'number' || !Number.isFinite(distanceKm)) {
+    return null;
+  }
+
+  if (distanceKm <= 0.1) {
+    return 'almost there';
+  }
+
+  return `${distanceKm.toFixed(1)} km away`;
+}
+
+function getActivityEtaText(distanceKm: number | null | undefined) {
+  const etaMinutes = estimateEtaMinutes(distanceKm);
+
+  if (etaMinutes === null) {
+    return null;
+  }
+
+  return `ETA ${formatEta(etaMinutes)}`;
 }
 
 function getSampleActivityItems(): UnifiedActivityItem[] {
@@ -677,6 +739,18 @@ const styles = StyleSheet.create({
     fontSize: 13,
     lineHeight: 19,
     fontWeight: '700',
+  },
+  deliveryHint: {
+    backgroundColor: BrandColors.softGreen,
+    borderColor: BrandColors.border,
+    borderRadius: 16,
+    borderWidth: 1,
+    color: BrandColors.darkGreen,
+    fontSize: 13,
+    fontWeight: '900',
+    lineHeight: 18,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
   },
   badge: {
     alignSelf: 'flex-start',

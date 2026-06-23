@@ -2,17 +2,15 @@ import { router } from 'expo-router';
 import { useEffect, useMemo, useState } from 'react';
 import { Alert, StyleSheet, Text, View } from 'react-native';
 
-import { AppIcon } from '@/components/app-icon';
 import { AppScreen } from '@/components/app-screen';
+import { DeliveryTrackingCard } from '@/components/delivery-tracking-card';
 import { InfoCard } from '@/components/info-card';
 import { PrimaryButton } from '@/components/primary-button';
-import { RiderLocationMap } from '@/components/rider-location-map';
 import { SectionHeader } from '@/components/section-header';
 import { BrandColors } from '@/constants/brand';
 import {
   calculateDistanceKm,
   estimateEtaMinutes,
-  formatDistance,
   formatEta,
 } from '@/services/eta-service';
 import { useFoodOrderStatus } from '@/services/food-order-status';
@@ -77,6 +75,21 @@ export function FoodOrderTrackingScreen() {
   const deliveryEta = useMemo(
     () => getFoodDeliveryEta(currentFoodOrder?.status, riderPoint, deliveryPoint),
     [currentFoodOrder?.status, deliveryPoint, riderPoint]
+  );
+  const isWaitingForFoodRider = Boolean(
+    currentFoodOrder &&
+      currentFoodOrder.status !== 'pending' &&
+      activeFoodStatuses.includes(currentFoodOrder.status) &&
+      !currentFoodOrder.assigned_rider_id
+  );
+  const isWaitingForFoodRiderLocation = Boolean(
+    currentFoodOrder?.assigned_rider_id &&
+      activeFoodStatuses.includes(currentFoodOrder.status) &&
+      !visibleRiderLocation
+  );
+  const deliveryLocationUrl = getSafeGoogleMapsSearchUrl(
+    deliveryPoint,
+    currentFoodOrder?.delivery_location
   );
 
   useEffect(() => {
@@ -175,9 +188,6 @@ export function FoodOrderTrackingScreen() {
   const foodOrderId = currentFoodOrder.id;
   const foodOrderStatus = currentFoodOrder.status;
   const shouldKeepTracking = activeFoodStatuses.includes(currentFoodOrder.status);
-  const timelineStatuses = isCancelled ? (['cancelled'] as FoodOrderStatus[]) : foodTimelineStatuses;
-  const currentStatusIndex = Math.max(timelineStatuses.indexOf(currentFoodOrder.status), 0);
-  const progressPercent = `${((currentStatusIndex + 1) / timelineStatuses.length) * 100}%` as `${number}%`;
 
   function handleKeepTracking() {
     console.log('FOOD_TRACKING_KEEP_TRACKING_PRESSED', {
@@ -198,31 +208,43 @@ export function FoodOrderTrackingScreen() {
     <AppScreen>
       <SectionHeader eyebrow="Food order" title="Track delivery" />
 
-      <View style={styles.statusHero}>
-        <View style={styles.statusHeader}>
-          <AppIcon
-            backgroundColor={BrandColors.yellow}
-            color={BrandColors.darkGreen}
-            name={{ ios: 'takeoutbag.and.cup.and.straw', android: 'delivery_dining', web: 'delivery_dining' }}
-            size={34}
-            style={styles.heroIcon}
-          />
-          <View style={styles.statusCopy}>
-            <Text style={styles.statusLabel}>Current status</Text>
-            <Text style={styles.statusTitle}>{toFoodStatusLabel(currentFoodOrder.status)}</Text>
-          </View>
-        </View>
-
-        <View style={styles.progressTrack}>
-          <View
-            style={[
-              styles.progressFill,
-              isCancelled && styles.cancelledProgressFill,
-              { width: progressPercent },
-            ]}
-          />
-        </View>
-      </View>
+      <DeliveryTrackingCard
+        currentStepKey={currentFoodOrder.status}
+        distanceKm={deliveryEta.distanceKm}
+        etaPrimary={deliveryEta.primary}
+        etaMinutes={deliveryEta.etaMinutes}
+        etaSecondary={deliveryEta.secondary}
+        icon={{ ios: 'takeoutbag.and.cup.and.straw', android: 'delivery_dining', web: 'delivery_dining' }}
+        isWaitingForLocation={isWaitingForFoodRiderLocation}
+        isWaitingForRider={isWaitingForFoodRider}
+        lastUpdated={
+          visibleRiderLocation?.updated_at ? formatDateTime(visibleRiderLocation.updated_at) : null
+        }
+        mapActions={[
+          ...(riderPoint && deliveryPoint && currentFoodOrder.status === 'on_the_way'
+            ? [
+                {
+                  label: 'Open Delivery Route',
+                  onPress: () => void openFoodRiderDeliveryRoute(riderPoint, deliveryPoint),
+                },
+              ]
+            : []),
+          ...(deliveryLocationUrl
+            ? [
+                {
+                  label: 'View Delivery Location',
+                  onPress: () => void openMapUrl(deliveryLocationUrl),
+                },
+              ]
+            : []),
+        ]}
+        riderName={currentFoodOrder.assigned_rider_id ? 'Assigned rider' : null}
+        routeTarget="delivery"
+        serviceLabel="Food delivery"
+        statusLabel={getFriendlyFoodTrackingTitle(currentFoodOrder.status)}
+        statusMessage={riderLocationMessage || getFoodTrackingStateMessage(currentFoodOrder.status)}
+        steps={getFoodDeliverySteps(currentFoodOrder.status)}
+      />
 
       <InfoCard title="Delivery Details">
         <DetailRow label="Customer" value={currentFoodOrder.customer_name ?? 'Customer'} />
@@ -237,69 +259,6 @@ export function FoodOrderTrackingScreen() {
           label="Total"
           value={formatPeso(currentFoodOrder.order_total ?? currentFoodOrder.total_amount)}
         />
-      </InfoCard>
-
-      {currentFoodOrder.assigned_rider_id ? (
-        <InfoCard title="Live Rider Location">
-          <View style={styles.riderLocationContent}>
-            {riderPoint && visibleRiderLocation ? (
-              <>
-                <DetailRow label="Rider latitude" value={riderPoint.latitude.toFixed(6)} />
-                <DetailRow label="Rider longitude" value={riderPoint.longitude.toFixed(6)} />
-                <DetailRow
-                  label="Last updated"
-                  value={formatDateTime(visibleRiderLocation.updated_at)}
-                />
-                <RiderLocationMap
-                  destinationPoint={deliveryPoint}
-                  pickupPoint={null}
-                  riderPoint={riderPoint}
-                />
-              </>
-            ) : (
-              <Text style={styles.waitingText}>
-                {riderLocationMessage || 'Waiting for rider location...'}
-              </Text>
-            )}
-
-            <View style={styles.etaBox}>
-              <Text style={styles.etaPrimary}>{deliveryEta.primary}</Text>
-              {deliveryEta.secondary ? (
-                <Text style={styles.etaSecondary}>{deliveryEta.secondary}</Text>
-              ) : null}
-            </View>
-
-            {riderPoint ? (
-              <PrimaryButton
-                title="Open Rider Location in Google Maps"
-                variant="secondary"
-                onPress={() => void openFoodRiderLocationMap(riderPoint)}
-              />
-            ) : null}
-
-            {riderPoint && deliveryPoint && currentFoodOrder.status === 'on_the_way' ? (
-              <PrimaryButton
-                title="Open Rider to Delivery Route in Google Maps"
-                variant="secondary"
-                onPress={() => void openFoodRiderDeliveryRoute(riderPoint, deliveryPoint)}
-              />
-            ) : null}
-          </View>
-        </InfoCard>
-      ) : null}
-
-      <InfoCard title="Status Timeline">
-        <View style={styles.timeline}>
-          {timelineStatuses.map((status, index) => (
-            <TimelineItem
-              isActive={index === currentStatusIndex}
-              isComplete={!isCancelled && (index < currentStatusIndex || isDelivered)}
-              isLast={index === timelineStatuses.length - 1}
-              key={status}
-              status={status}
-            />
-          ))}
-        </View>
       </InfoCard>
 
       {syncMessage ? <Text style={styles.syncMessage}>{syncMessage}</Text> : null}
@@ -358,12 +317,12 @@ function getFoodDeliveryEta(
 ) {
   if (status === 'delivered') {
     console.log('FOOD_DELIVERY_ETA_RESULT', { etaText: 'Delivered', status });
-    return { primary: 'Delivered', secondary: null };
+    return { distanceKm: null, etaMinutes: null, primary: 'Delivered successfully', secondary: null };
   }
 
   if (status === 'cancelled') {
     console.log('FOOD_DELIVERY_ETA_RESULT', { etaText: 'Cancelled', status });
-    return { primary: 'Cancelled', secondary: null };
+    return { distanceKm: null, etaMinutes: null, primary: 'Cancelled', secondary: null };
   }
 
   if (status === 'accepted' || status === 'preparing') {
@@ -372,28 +331,19 @@ function getFoodDeliveryEta(
       status,
     });
     return {
+      distanceKm: null,
+      etaMinutes: null,
       primary: 'Preparing order',
-      secondary: 'Delivery ETA starts when the rider is on the way.',
+      secondary: 'Delivery ETA will update after pickup.',
     };
   }
 
-  if (status === 'picked_up') {
-    console.log('FOOD_DELIVERY_ETA_RESULT', {
-      etaText: 'Rider is on the way to pickup',
-      status,
-    });
-    return {
-      primary: 'Rider is on the way to pickup',
-      secondary: 'Delivery ETA starts when the rider is on the way.',
-    };
-  }
-
-  if (status !== 'on_the_way') {
+  if (status !== 'picked_up' && status !== 'on_the_way') {
     console.log('FOOD_DELIVERY_ETA_RESULT', {
       etaText: 'Waiting for rider location...',
       status: status ?? null,
     });
-    return { primary: 'Waiting for rider location...', secondary: null };
+    return { distanceKm: null, etaMinutes: null, primary: 'Waiting for rider update', secondary: null };
   }
 
   const distanceKm = calculateDistanceKm(
@@ -411,11 +361,17 @@ function getFoodDeliveryEta(
       etaText: 'Waiting for rider location...',
       status,
     });
-    return { primary: 'Waiting for rider location...', secondary: null };
+    return {
+      distanceKm: null,
+      etaMinutes: null,
+      primary: 'Distance unavailable',
+      secondary: 'ETA will update soon',
+    };
   }
 
-  const primary = `Rider is ${formatDistance(distanceKm)} from delivery`;
-  const secondary = `Estimated delivery arrival: ${formatEta(etaMinutes)}`;
+  const distanceSummary = getCustomerDistanceSummary(distanceKm);
+  const primary = distanceSummary.primary;
+  const secondary = `${distanceSummary.secondary} • ${formatEta(etaMinutes)}`;
 
   console.log('FOOD_DELIVERY_ETA_RESULT', {
     distanceKm,
@@ -425,18 +381,92 @@ function getFoodDeliveryEta(
     status,
   });
 
-  return { primary, secondary };
+  return { distanceKm, etaMinutes, primary, secondary };
 }
 
-async function openFoodRiderLocationMap(riderPoint: LocationPoint) {
-  const url = getSafeGoogleMapsSearchUrl(riderPoint);
-
-  if (!url) {
-    showFoodRiderMapOpenFailure(new Error('Rider location URL could not be created.'));
-    return;
+function getCustomerDistanceSummary(distanceKm: number) {
+  if (distanceKm === 0) {
+    return {
+      primary: 'Rider is at the delivery area',
+      secondary: 'At delivery area',
+    };
   }
 
-  console.log('FOOD_RIDER_MAP_URL', url);
+  if (distanceKm <= 0.1) {
+    return {
+      primary: 'Rider is almost there',
+      secondary: `${formatMeters(distanceKm)} m away`,
+    };
+  }
+
+  return {
+    primary: `Rider is ${distanceKm.toFixed(1)} km away`,
+    secondary: `${distanceKm.toFixed(1)} km away`,
+  };
+}
+
+function formatMeters(distanceKm: number) {
+  return Math.max(1, Math.round(distanceKm * 1000));
+}
+
+function getFriendlyFoodTrackingTitle(status: FoodOrderStatus) {
+  switch (status) {
+    case 'pending':
+      return 'Order sent';
+    case 'accepted':
+      return 'Restaurant accepted your order';
+    case 'preparing':
+      return 'Food is being prepared';
+    case 'picked_up':
+      return 'Rider picked up your order';
+    case 'on_the_way':
+      return 'Rider is on the way';
+    case 'delivered':
+      return 'Food delivered';
+    case 'cancelled':
+      return 'Order cancelled';
+  }
+}
+
+function getFoodTrackingStateMessage(status: FoodOrderStatus) {
+  switch (status) {
+    case 'pending':
+      return 'Your food order has been sent to the restaurant.';
+    case 'accepted':
+      return 'The restaurant is reviewing and preparing your food.';
+    case 'preparing':
+      return 'The restaurant is preparing your food.';
+    case 'picked_up':
+      return 'Your rider is now carrying your food.';
+    case 'on_the_way':
+      return 'Your rider is heading to your delivery address.';
+    case 'delivered':
+      return 'Enjoy your meal!';
+    case 'cancelled':
+      return 'This food order was cancelled.';
+  }
+}
+
+function getFoodDeliverySteps(currentStatus: FoodOrderStatus) {
+  if (currentStatus === 'cancelled') {
+    return [
+      {
+        description: 'This food order was cancelled.',
+        key: 'cancelled',
+        label: 'Cancelled',
+      },
+    ];
+  }
+
+  return foodTimelineStatuses.map((status) => ({
+    description: getFoodStatusDescription(status),
+    key: status,
+    label: toFoodStatusLabel(status),
+  }));
+}
+
+async function openMapUrl(url: string) {
+  console.log('FOOD_DELIVERY_MAP_URL', url);
 
   try {
     await openGoogleMapsUrlDirect(url);
@@ -458,11 +488,7 @@ async function openFoodRiderDeliveryRoute(
 
   console.log('FOOD_RIDER_MAP_URL', url);
 
-  try {
-    await openGoogleMapsUrlDirect(url);
-  } catch (error) {
-    showFoodRiderMapOpenFailure(error);
-  }
+  await openMapUrl(url);
 }
 
 function showFoodRiderMapOpenFailure(error: unknown) {
@@ -486,52 +512,6 @@ function formatDateTime(value: string) {
   });
 }
 
-function TimelineItem({
-  isActive,
-  isComplete,
-  isLast,
-  status,
-}: {
-  isActive: boolean;
-  isComplete: boolean;
-  isLast: boolean;
-  status: FoodOrderStatus;
-}) {
-  const isCancelled = status === 'cancelled';
-  const activeColor = isCancelled ? BrandColors.danger : BrandColors.green;
-  const dotColor = isComplete || isActive ? activeColor : BrandColors.border;
-
-  return (
-    <View style={styles.timelineItem}>
-      <View style={styles.timelineRail}>
-        <View style={[styles.timelineDot, { backgroundColor: dotColor }]} />
-        {!isLast ? (
-          <View
-            style={[
-              styles.timelineLine,
-              (isComplete || isActive) && styles.timelineLineComplete,
-            ]}
-          />
-        ) : null}
-      </View>
-      <View style={[
-        styles.timelineCard,
-        isActive && styles.activeTimelineCard,
-        isActive && isCancelled && styles.cancelledTimelineCard,
-      ]}>
-        <Text style={[
-          styles.timelineStatus,
-          isActive && styles.activeTimelineStatus,
-          isActive && isCancelled && styles.cancelledTimelineStatus,
-        ]}>
-          {toFoodStatusLabel(status)}
-        </Text>
-        <Text style={styles.timelineDescription}>{getFoodStatusDescription(status)}</Text>
-      </View>
-    </View>
-  );
-}
-
 function toFoodStatusLabel(status: FoodOrderStatus) {
   return status
     .split('_')
@@ -542,17 +522,17 @@ function toFoodStatusLabel(status: FoodOrderStatus) {
 function getFoodStatusDescription(status: FoodOrderStatus) {
   switch (status) {
     case 'pending':
-      return 'Your food order has been sent.';
+      return 'Your food order has been sent to the restaurant.';
     case 'accepted':
-      return 'The restaurant accepted your order.';
+      return 'The restaurant is reviewing and preparing your food.';
     case 'preparing':
       return 'The restaurant is preparing your food.';
     case 'picked_up':
-      return 'Your rider picked up the order.';
+      return 'Your rider is now carrying your food.';
     case 'on_the_way':
       return 'Your rider is heading to your delivery address.';
     case 'delivered':
-      return 'Food order delivered. Enjoy your meal.';
+      return 'Enjoy your meal!';
     case 'cancelled':
       return 'This food order was cancelled.';
   }

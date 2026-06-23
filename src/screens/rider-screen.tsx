@@ -369,29 +369,10 @@ export function RiderScreen() {
     () => sortedRiderJobs.filter((job) => matchesRiderJobFilter(job, riderJobFilter)),
     [riderJobFilter, sortedRiderJobs]
   );
-  const activeLiveLocationTarget = useMemo<ActiveLiveLocationTarget>(() => {
-    const activeJob = sortedRiderJobs.find((job) => (
-      job.kind === 'ride'
-        ? liveLocationStatuses.includes(job.ride.status)
-        : job.kind === 'food'
-          ? foodLiveLocationStatuses.includes(job.foodOrder.status)
-          : partnerLiveLocationStatuses.includes(job.partnerOrder.status)
-    ));
-
-    if (!activeJob) {
-      return null;
-    }
-
-    return {
-      id: activeJob.id,
-      kind:
-        activeJob.kind === 'ride'
-          ? 'booking'
-          : activeJob.kind === 'food'
-            ? 'food_order'
-            : 'partner_order',
-    };
-  }, [sortedRiderJobs]);
+  const activeLiveLocationTarget = useMemo<ActiveLiveLocationTarget>(
+    () => getActiveLiveLocationTarget(sortedRiderJobs),
+    [sortedRiderJobs]
+  );
   const isLiveLocationToggleOn = isSharingLiveLocation && Boolean(activeLiveLocationTarget);
   const completedJobsCount = useMemo(
     () =>
@@ -587,7 +568,21 @@ export function RiderScreen() {
     async function publishLocation() {
       try {
         if (activeTarget.kind === 'booking') {
+          if (__DEV__) {
+            console.log('RIDE_LOCATION_PUBLISH_START', {
+              bookingId: activeTarget.id,
+              riderId: rider.id,
+            });
+          }
+
           await publishCurrentRiderLocation(rider.id, activeTarget.id);
+
+          if (__DEV__) {
+            console.log('RIDE_LOCATION_PUBLISH_SUCCESS', {
+              bookingId: activeTarget.id,
+              riderId: rider.id,
+            });
+          }
         } else if (activeTarget.kind === 'food_order') {
           await publishCurrentRiderFoodOrderLocation(rider.id, activeTarget.id);
         } else {
@@ -598,6 +593,14 @@ export function RiderScreen() {
           setLiveLocationMessage('Live location updated.');
         }
       } catch (error) {
+        if (__DEV__ && activeTarget.kind === 'booking') {
+          console.warn('RIDE_LOCATION_PUBLISH_FAILED', {
+            bookingId: activeTarget.id,
+            error,
+            riderId: rider.id,
+          });
+        }
+
         if (isMounted) {
           setLiveLocationMessage(`Live location update failed. ${getErrorMessage(error)}`);
         }
@@ -1348,6 +1351,51 @@ function sortRiderJobs(riderJobs: UnifiedRiderJob[]) {
 
     return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
   });
+}
+
+function getActiveLiveLocationTarget(sortedJobs: UnifiedRiderJob[]): ActiveLiveLocationTarget {
+  const activeRide = sortedJobs.find(
+    (job) => job.kind === 'ride' && liveLocationStatuses.includes(job.ride.status)
+  );
+
+  if (activeRide?.kind === 'ride') {
+    return {
+      id: activeRide.ride.id,
+      kind: 'booking',
+    };
+  }
+
+  const activeDelivery = sortedJobs.find((job) => {
+    if (job.kind === 'food') {
+      return foodLiveLocationStatuses.includes(job.foodOrder.status);
+    }
+
+    if (job.kind === 'partner') {
+      return partnerLiveLocationStatuses.includes(job.partnerOrder.status);
+    }
+
+    return false;
+  });
+
+  if (!activeDelivery) {
+    return null;
+  }
+
+  if (activeDelivery.kind === 'food') {
+    return {
+      id: activeDelivery.foodOrder.id,
+      kind: 'food_order',
+    };
+  }
+
+  if (activeDelivery.kind === 'partner') {
+    return {
+      id: activeDelivery.partnerOrder.id,
+      kind: 'partner_order',
+    };
+  }
+
+  return null;
 }
 
 function matchesRiderJobFilter(job: UnifiedRiderJob, filter: RiderJobFilter) {

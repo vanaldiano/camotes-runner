@@ -30,55 +30,61 @@ import {
 import { hasSupabaseConfig } from '@/services/supabase';
 
 const paymentMethods = ['Cash', 'GCash'] as const;
-const destinationPresets = [
+const locationPresets = [
   {
-    latitude: 10.6365167,
-    longitude: 124.2980967,
+    latitude: 10.6629,
+    longitude: 124.3396,
     name: 'Consuelo Port',
   },
   {
-    latitude: 10.646,
-    longitude: 124.351,
+    latitude: 10.6469,
+    longitude: 124.3506,
     name: 'San Francisco Town Center',
   },
   {
-    latitude: 10.6881,
-    longitude: 124.402,
-    name: 'San Francisco Market',
-  },
-  {
-    latitude: 10.59,
-    longitude: 124.32,
+    latitude: 10.5931,
+    longitude: 124.3044,
     name: 'Santiago Bay',
   },
   {
-    latitude: 10.629,
-    longitude: 124.408,
+    latitude: 10.6296,
+    longitude: 124.4071,
     name: 'Poro Town Center',
   },
   {
-    latitude: 10.638,
-    longitude: 124.472,
+    latitude: 10.6381,
+    longitude: 124.4726,
     name: 'Tudela Town Center',
   },
 ] as const;
 const SAME_LOCATION_WARNING =
   'Pickup and destination look the same. Please choose a different destination.';
+const COORDINATE_REQUIRED_MESSAGE =
+  'Please choose a pickup and destination with location details.';
+const LOCATION_UNAVAILABLE_MESSAGE =
+  'We couldn’t get your location. Please choose a pickup location or enter it manually.';
 const VERY_CLOSE_COORDINATE_THRESHOLD_KM = 0.05;
+const defaultPickupPreset = locationPresets[0];
+const defaultDestinationPreset = locationPresets[2];
 
 export function BookingScreen() {
   const [selectedService, setSelectedService] = useState(customerServices[0].title);
   const [paymentMethod, setPaymentMethod] = useState<(typeof paymentMethods)[number]>(
     paymentMethods[0]
   );
-  const [pickupLocation, setPickupLocation] = useState('Consuelo Port, San Francisco');
-  const [pickupCoordinates, setPickupCoordinates] = useState<LocationPoint | null>(null);
-  const [destination, setDestination] = useState('Santiago Bay, San Francisco');
-  const [destinationCoordinates, setDestinationCoordinates] = useState<LocationPoint | null>(null);
+  const [pickupLocation, setPickupLocation] = useState<string>(defaultPickupPreset.name);
+  const [pickupCoordinates, setPickupCoordinates] = useState<LocationPoint | null>(
+    getLocationPointFromPreset(defaultPickupPreset)
+  );
+  const [destination, setDestination] = useState<string>(defaultDestinationPreset.name);
+  const [destinationCoordinates, setDestinationCoordinates] = useState<LocationPoint | null>(
+    getLocationPointFromPreset(defaultDestinationPreset)
+  );
   const [notes, setNotes] = useState('Please call when you arrive at pickup.');
   const [isSaving, setIsSaving] = useState(false);
   const [locatingField, setLocatingField] = useState<'pickup' | 'destination' | null>(null);
   const [errorMessage, setErrorMessage] = useState('');
+  const [locationMessage, setLocationMessage] = useState('');
   const { createBooking: createMockBooking } = useBookingSimulation();
   const rideDistanceKm = useMemo(
     () =>
@@ -117,13 +123,25 @@ export function BookingScreen() {
     });
 
     if (coordinateValidationWarning) {
-      console.warn('BOOKING_COORDINATE_VALIDATION_WARNING', {
+      console.log('BOOKING_COORDINATE_VALIDATION_WARNING', {
         destination_lat: destinationCoordinates?.latitude ?? null,
         destination_lng: destinationCoordinates?.longitude ?? null,
         message: coordinateValidationWarning,
         pickup_lat: pickupCoordinates?.latitude ?? null,
         pickup_lng: pickupCoordinates?.longitude ?? null,
       });
+    }
+
+    if (!pickupLocation.trim() || !destination.trim()) {
+      setErrorMessage('Please enter your pickup and destination.');
+      setIsSaving(false);
+      return;
+    }
+
+    if (!isValidLocationPoint(pickupCoordinates) || !isValidLocationPoint(destinationCoordinates)) {
+      setErrorMessage(COORDINATE_REQUIRED_MESSAGE);
+      setIsSaving(false);
+      return;
     }
 
     console.log('BOOKING_SCREEN_COORDINATES', {
@@ -201,11 +219,23 @@ export function BookingScreen() {
     }
   }
 
-  function handleSelectDestinationPreset(preset: (typeof destinationPresets)[number]) {
-    const presetCoordinates = {
-      latitude: preset.latitude,
-      longitude: preset.longitude,
-    };
+  function handleSelectPickupPreset(preset: (typeof locationPresets)[number]) {
+    const presetCoordinates = getLocationPointFromPreset(preset);
+
+    console.log('PICKUP_PRESET_SELECTED', {
+      pickup_lat: presetCoordinates.latitude,
+      pickup_lng: presetCoordinates.longitude,
+      pickup_name: preset.name,
+    });
+
+    setPickupLocation(preset.name);
+    setPickupCoordinates(presetCoordinates);
+    setErrorMessage('');
+    setLocationMessage(`${preset.name} selected for pickup.`);
+  }
+
+  function handleSelectDestinationPreset(preset: (typeof locationPresets)[number]) {
+    const presetCoordinates = getLocationPointFromPreset(preset);
 
     console.log('DESTINATION_PRESET_SELECTED', {
       destination_lat: presetCoordinates.latitude,
@@ -216,16 +246,31 @@ export function BookingScreen() {
     setDestination(preset.name);
     setDestinationCoordinates(presetCoordinates);
     setErrorMessage('');
+    setLocationMessage(`${preset.name} selected for destination.`);
   }
 
   function handlePickupTextChange(value: string) {
     setPickupLocation(value);
     setPickupCoordinates(null);
+    setLocationMessage('Manual pickup entered. Choose a preset if you need fare and ETA details.');
   }
 
   function handleDestinationTextChange(value: string) {
     setDestination(value);
     setDestinationCoordinates(null);
+    setLocationMessage('Manual destination entered. Choose a preset if you need fare and ETA details.');
+  }
+
+  function handleUseManualAddress(field: 'pickup' | 'destination') {
+    if (field === 'pickup') {
+      setPickupCoordinates(null);
+      setLocationMessage('Type your pickup address, or choose a preset to add location details.');
+    } else {
+      setDestinationCoordinates(null);
+      setLocationMessage('Type your destination, or choose a preset to add location details.');
+    }
+
+    setErrorMessage('');
   }
 
   async function handleUseCurrentLocation(field: 'pickup' | 'destination') {
@@ -242,10 +287,14 @@ export function BookingScreen() {
         setDestinationCoordinates(currentLocation);
         setDestination(currentLocation.label ?? 'Selected location');
       }
+
+      setLocationMessage('Current location selected.');
     } catch (error) {
-      setErrorMessage(
-        `We could not get your current location. You can still type the address manually. ${getErrorMessage(error)}`
-      );
+      if (__DEV__) {
+        console.log('BOOKING_LOCATION_UNAVAILABLE', getErrorMessage(error));
+      }
+
+      setLocationMessage(LOCATION_UNAVAILABLE_MESSAGE);
     } finally {
       setLocatingField(null);
     }
@@ -296,7 +345,12 @@ export function BookingScreen() {
           coordinates={pickupCoordinates}
           isLoading={locatingField === 'pickup'}
           onClear={() => setPickupCoordinates(null)}
+          onUseManualAddress={() => handleUseManualAddress('pickup')}
           onUseCurrentLocation={() => void handleUseCurrentLocation('pickup')}
+        />
+        <LocationPresetPicker
+          selectedCoordinates={pickupCoordinates}
+          onSelect={handleSelectPickupPreset}
         />
       </StepCard>
 
@@ -306,7 +360,7 @@ export function BookingScreen() {
           value={destination}
           onChangeText={handleDestinationTextChange}
         />
-        <DestinationPresetPicker
+        <LocationPresetPicker
           selectedCoordinates={destinationCoordinates}
           onSelect={handleSelectDestinationPreset}
         />
@@ -315,6 +369,7 @@ export function BookingScreen() {
           coordinates={destinationCoordinates}
           isLoading={locatingField === 'destination'}
           onClear={() => setDestinationCoordinates(null)}
+          onUseManualAddress={() => handleUseManualAddress('destination')}
           onUseCurrentLocation={() => void handleUseCurrentLocation('destination')}
         />
       </StepCard>
@@ -373,6 +428,7 @@ export function BookingScreen() {
       ) : null}
 
       {errorMessage ? <Text style={styles.errorText}>{errorMessage}</Text> : null}
+      {locationMessage ? <Text style={styles.locationMessage}>{locationMessage}</Text> : null}
 
       <PrimaryButton
         disabled={isSaving}
@@ -388,6 +444,7 @@ type LocationPickerRowProps = {
   coordinates: LocationPoint | null;
   isLoading: boolean;
   onClear: () => void;
+  onUseManualAddress: () => void;
   onUseCurrentLocation: () => void;
 };
 
@@ -396,6 +453,7 @@ function LocationPickerRow({
   coordinates,
   isLoading,
   onClear,
+  onUseManualAddress,
   onUseCurrentLocation,
 }: LocationPickerRowProps) {
   return (
@@ -414,6 +472,12 @@ function LocationPickerRow({
             {isLoading ? 'Locating...' : buttonTitle}
           </Text>
         </Pressable>
+        <Pressable
+          accessibilityRole="button"
+          style={({ pressed }) => [styles.manualLocationButton, pressed && styles.pressed]}
+          onPress={onUseManualAddress}>
+          <Text style={styles.manualLocationText}>Use Manual Address</Text>
+        </Pressable>
         {coordinates ? (
           <Pressable
             accessibilityRole="button"
@@ -427,15 +491,15 @@ function LocationPickerRow({
   );
 }
 
-type DestinationPresetPickerProps = {
-  onSelect: (preset: (typeof destinationPresets)[number]) => void;
+type LocationPresetPickerProps = {
+  onSelect: (preset: (typeof locationPresets)[number]) => void;
   selectedCoordinates: LocationPoint | null;
 };
 
-function DestinationPresetPicker({ onSelect, selectedCoordinates }: DestinationPresetPickerProps) {
+function LocationPresetPicker({ onSelect, selectedCoordinates }: LocationPresetPickerProps) {
   return (
     <View style={styles.destinationPresetGrid}>
-      {destinationPresets.map((preset) => {
+      {locationPresets.map((preset) => {
         const isSelected =
           selectedCoordinates?.latitude === preset.latitude &&
           selectedCoordinates.longitude === preset.longitude;
@@ -462,6 +526,14 @@ function DestinationPresetPicker({ onSelect, selectedCoordinates }: DestinationP
       })}
     </View>
   );
+}
+
+function getLocationPointFromPreset(preset: (typeof locationPresets)[number]): LocationPoint {
+  return {
+    label: preset.name,
+    latitude: preset.latitude,
+    longitude: preset.longitude,
+  };
 }
 
 function getErrorMessage(error: unknown) {
@@ -674,6 +746,28 @@ const styles = StyleSheet.create({
   },
   locationButtonText: {
     color: BrandColors.green,
+    fontSize: 12,
+    fontWeight: '900',
+  },
+  locationMessage: {
+    color: BrandColors.darkGreen,
+    fontSize: 13,
+    fontWeight: '800',
+    lineHeight: 19,
+    textAlign: 'center',
+  },
+  manualLocationButton: {
+    alignItems: 'center',
+    backgroundColor: BrandColors.paleYellow,
+    borderColor: BrandColors.yellow,
+    borderRadius: 16,
+    borderWidth: 1,
+    justifyContent: 'center',
+    minHeight: 42,
+    paddingHorizontal: 12,
+  },
+  manualLocationText: {
+    color: BrandColors.darkGreen,
     fontSize: 12,
     fontWeight: '900',
   },

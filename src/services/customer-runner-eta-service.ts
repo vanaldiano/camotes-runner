@@ -29,7 +29,7 @@ export function getCustomerRunnerCardEta(input: CustomerRunnerCardEtaInput) {
   const normalizedStatus = normalizeStatus(input.status);
   const isRealBooking = Boolean(input.isRealBooking || input.bookingId);
 
-  console.log('CUSTOMER_RUNNER_CARD_ETA_INPUT', {
+  logRideEta('RIDE_ETA_INPUT', {
     bookingId: input.bookingId ?? null,
     destinationLat: input.destinationLat ?? null,
     destinationLng: input.destinationLng ?? null,
@@ -43,7 +43,7 @@ export function getCustomerRunnerCardEta(input: CustomerRunnerCardEtaInput) {
   });
 
   if (normalizedStatus === 'completed') {
-    console.log('CUSTOMER_RUNNER_CARD_ETA_RESULT', {
+    logRideEta('RIDE_ETA_RESULT', {
       etaText: 'Completed',
       status: normalizedStatus,
     });
@@ -51,7 +51,7 @@ export function getCustomerRunnerCardEta(input: CustomerRunnerCardEtaInput) {
   }
 
   if (normalizedStatus === 'cancelled') {
-    console.log('CUSTOMER_RUNNER_CARD_ETA_RESULT', {
+    logRideEta('RIDE_ETA_RESULT', {
       etaText: 'Cancelled',
       status: normalizedStatus,
     });
@@ -59,9 +59,9 @@ export function getCustomerRunnerCardEta(input: CustomerRunnerCardEtaInput) {
   }
 
   if (!isRealBooking) {
-    const etaText = input.staticEta ?? 'Calculating...';
+    const etaText = input.staticEta ?? 'Waiting for rider location';
 
-    console.log('CUSTOMER_RUNNER_CARD_ETA_FALLBACK', {
+    logRideEta('RIDE_ETA_RESULT', {
       etaText,
       reason: 'simulation_booking_static_eta',
     });
@@ -71,11 +71,22 @@ export function getCustomerRunnerCardEta(input: CustomerRunnerCardEtaInput) {
   const target = getTargetPoint(normalizedStatus, input);
 
   if (!target) {
-    console.log('CUSTOMER_RUNNER_CARD_ETA_FALLBACK', {
-      etaText: 'Calculating...',
+    logRideEta('RIDE_ETA_COORDINATES_MISSING', {
+      etaText: 'ETA unavailable',
       reason: 'missing_target_coordinates',
+      status: normalizedStatus,
     });
-    return 'Calculating...';
+    return 'ETA unavailable';
+  }
+
+  if (!isValidCoordinate(input.riderLat) || !isValidCoordinate(input.riderLng)) {
+    logRideEta('RIDE_ETA_RESULT', {
+      etaText: 'Waiting for rider location',
+      reason: 'missing_rider_location',
+      status: normalizedStatus,
+      target: target.kind,
+    });
+    return 'Waiting for rider location';
   }
 
   const distanceKm = calculateDistanceKm(
@@ -87,19 +98,18 @@ export function getCustomerRunnerCardEta(input: CustomerRunnerCardEtaInput) {
   const etaMinutes = estimateEtaMinutes(distanceKm);
 
   if (distanceKm === null || etaMinutes === null) {
-    console.log('CUSTOMER_RUNNER_CARD_ETA_FALLBACK', {
-      etaText: 'Calculating...',
+    logRideEta('RIDE_ETA_COORDINATES_MISSING', {
+      etaText: 'ETA unavailable',
       reason: 'missing_rider_or_route_coordinates',
+      status: normalizedStatus,
+      target: target.kind,
     });
-    return 'Calculating...';
+    return 'ETA unavailable';
   }
 
-  const etaText =
-    target.kind === 'pickup'
-      ? `Estimated pickup arrival: ${formatEta(etaMinutes)}`
-      : `Estimated destination arrival: ${formatEta(etaMinutes)}`;
+  const etaText = formatEta(etaMinutes);
 
-  console.log('CUSTOMER_RUNNER_CARD_ETA_RESULT', {
+  logRideEta('RIDE_ETA_RESULT', {
     distanceKm,
     etaMinutes,
     etaText,
@@ -154,4 +164,10 @@ function normalizeStatus(status: CustomerRunnerEtaStatus) {
 
 function isValidCoordinate(value: unknown): value is number {
   return typeof value === 'number' && Number.isFinite(value);
+}
+
+function logRideEta(label: string, details: Record<string, unknown>) {
+  if (__DEV__) {
+    console.log(label, details);
+  }
 }

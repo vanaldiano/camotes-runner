@@ -52,6 +52,8 @@ const deliveryLocationPresets: DeliveryLocationPreset[] = [
     point: { latitude: 10.6381, longitude: 124.4726 },
   },
 ];
+const LOCATION_UNAVAILABLE_MESSAGE =
+  'We couldn’t get your location. Please choose a delivery location or enter it manually.';
 
 export function PartnerCheckoutScreen({ partnerId }: PartnerCheckoutScreenProps) {
   const { clearCart, items, partnerId: cartPartnerId, partnerName } = usePartnerCart();
@@ -158,9 +160,11 @@ export function PartnerCheckoutScreen({ partnerId }: PartnerCheckoutScreenProps)
 
       setLocationMessage('Current location selected.');
     } catch (error) {
-      setLocationMessage(
-        `We could not get your current location. ${getErrorMessage(error)} You can still type your address.`
-      );
+      if (__DEV__) {
+        console.log('PARTNER_CHECKOUT_LOCATION_UNAVAILABLE', getErrorMessage(error));
+      }
+
+      setLocationMessage(LOCATION_UNAVAILABLE_MESSAGE);
     } finally {
       setIsLocating(false);
     }

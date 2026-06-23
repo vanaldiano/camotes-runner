@@ -25,6 +25,8 @@ import { hasSupabaseConfig } from '@/services/supabase';
 import type { PaymentMethod } from '@/types/database';
 
 const paymentMethods: PaymentMethod[] = ['Cash', 'GCash'];
+const LOCATION_UNAVAILABLE_MESSAGE =
+  'We couldn’t get your location. Please choose a delivery location or enter it manually.';
 
 export function FoodCheckoutScreen() {
   const {
@@ -142,9 +144,11 @@ export function FoodCheckoutScreen() {
       setDeliveryCoordinates(currentLocation);
       setDeliveryAddress(currentLocation.label ?? 'Selected location');
     } catch (error) {
-      setErrorMessage(
-        `We could not get your current location. You can still type the address manually. ${getErrorMessage(error)}`
-      );
+      if (__DEV__) {
+        console.log('FOOD_CHECKOUT_LOCATION_UNAVAILABLE', getErrorMessage(error));
+      }
+
+      setErrorMessage(LOCATION_UNAVAILABLE_MESSAGE);
     } finally {
       setIsLocatingDelivery(false);
     }
