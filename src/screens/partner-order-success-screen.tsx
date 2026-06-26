@@ -48,7 +48,7 @@ export function PartnerOrderSuccessScreen({ orderId }: PartnerOrderSuccessScreen
 
   return (
     <AppScreen>
-      <ScreenHeader showHomeButton title="Order sent" />
+      <ScreenHeader showHomeButton title="Payment submitted" />
 
       <View style={styles.statusHero}>
         <View style={styles.statusHeader}>
@@ -61,15 +61,21 @@ export function PartnerOrderSuccessScreen({ orderId }: PartnerOrderSuccessScreen
           />
           <View style={styles.statusCopy}>
             <Text style={styles.statusLabel}>Partner order</Text>
-            <Text style={styles.title}>Order sent</Text>
+            <Text style={styles.title}>Payment submitted</Text>
           </View>
         </View>
       </View>
 
       <View style={styles.card}>
-        <Text style={styles.cardTitle}>Your order was sent to the partner shop.</Text>
+        <Text style={styles.cardTitle}>
+          Your order will be sent to the shop after payment is confirmed.
+        </Text>
         <DetailRow label="Order reference" value={orderId.slice(0, 8)} />
         <DetailRow label="Status" value={order?.status ? toTitleCase(order.status) : 'Pending'} />
+        <DetailRow
+          label="Payment"
+          value={order?.payment_status ? toTitleCase(order.payment_status) : 'Payment Submitted'}
+        />
         {!couldLoadOrder ? (
           <Text style={styles.note}>Order details may take a moment to appear.</Text>
         ) : null}

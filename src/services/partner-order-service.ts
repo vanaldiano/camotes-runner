@@ -31,6 +31,7 @@ export type CreatePartnerOrderInput = {
   partnerId: string;
   partnerName?: string | null;
   paymentMethod: string;
+  paymentReference?: string | null;
   serviceFee?: number | null;
   totalAmount?: number | null;
 };
@@ -93,6 +94,7 @@ export async function createPartnerOrder(
     p_notes: input.notes,
     p_partner_id: input.partnerId,
     p_payment_method: input.paymentMethod,
+    p_payment_reference: normalizeOptionalText(input.paymentReference),
     p_service_fee: normalizeAmount(input.serviceFee),
     p_total_amount: normalizeAmount(input.totalAmount),
   });
@@ -302,6 +304,12 @@ function normalizeAmount(value: number | null | undefined) {
   return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : null;
 }
 
+function normalizeOptionalText(value: string | null | undefined) {
+  const trimmedValue = value?.trim() ?? '';
+
+  return trimmedValue || null;
+}
+
 async function withPartnerNames(orders: PartnerOrder[]): Promise<PartnerOrderWithPartner[]> {
   if (orders.length === 0) {
     return [];
@@ -490,7 +498,15 @@ function getStalePartnerOrderFromReference(
     partner_id: reference.partnerId,
     partner_name: reference.partnerName ?? 'Partner shop',
     partner_status: 'new',
-    payment_method: 'cash',
+    payment_confirmed_at: null,
+    payment_confirmed_by: null,
+    payment_method: 'GCash',
+    payment_notes: null,
+    payment_proof_path: null,
+    payment_proof_url: null,
+    payment_reference: null,
+    payment_status: 'pending_payment',
+    payment_submitted_at: null,
     rider_status: null,
     service_fee: 0,
     status: 'pending',

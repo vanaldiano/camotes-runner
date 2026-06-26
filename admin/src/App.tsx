@@ -35,6 +35,7 @@ import {
   getFoodOrderItems,
   getMenuCategories,
   getMenuItems,
+  getOrderPayments,
   getPartnerNotificationsByPartner,
   getPartnerOrderNotifications,
   getPartnerOrderItems,
@@ -54,10 +55,12 @@ import {
   togglePartnerProductAvailability,
   updateBusinessPartner,
   updateBookingStatus,
+  updateFoodOrderPaymentStatus,
   updateFoodOrderStatus,
   updateMenuItem,
   uploadPartnerProductImage,
   updatePartnerDeliveryRateProfile,
+  updatePartnerOrderPaymentStatus,
   updatePartnerOrderStatus,
   updatePartnerProduct,
   updateMenuItemAvailability,
@@ -73,6 +76,7 @@ import {
   type AdminFoodOrderItem,
   type AdminMenuCategory,
   type AdminMenuItem,
+  type AdminOrderPayment,
   type AdminPartnerOrderNotification,
   type AdminPartnerOrder,
   type AdminPartnerOrderItem,
@@ -365,6 +369,7 @@ export function App() {
   const [foodOrderItems, setFoodOrderItems] = useState<AdminFoodOrderItem[]>([]);
   const [partnerOrders, setPartnerOrders] = useState<AdminPartnerOrder[]>([]);
   const [partnerOrderItems, setPartnerOrderItems] = useState<AdminPartnerOrderItem[]>([]);
+  const [orderPayments, setOrderPayments] = useState<AdminOrderPayment[]>([]);
   const [restaurants, setRestaurants] = useState<AdminRestaurant[]>([]);
   const [menuCategories, setMenuCategories] = useState<AdminMenuCategory[]>([]);
   const [menuItems, setMenuItems] = useState<AdminMenuItem[]>([]);
@@ -419,6 +424,8 @@ export function App() {
   const [updatingBookingId, setUpdatingBookingId] = useState('');
   const [updatingFoodOrderId, setUpdatingFoodOrderId] = useState('');
   const [updatingPartnerOrderId, setUpdatingPartnerOrderId] = useState('');
+  const [updatingPaymentKey, setUpdatingPaymentKey] = useState('');
+  const [paymentNotes, setPaymentNotes] = useState<Record<string, string>>({});
   const [savingRestaurantId, setSavingRestaurantId] = useState('');
   const [savingMenuItemId, setSavingMenuItemId] = useState('');
   const [savingPartnerId, setSavingPartnerId] = useState('');
@@ -543,13 +550,15 @@ export function App() {
 
     try {
       const orderRows = await getAllFoodOrders();
-      const [itemRows, restaurantRows] = await Promise.all([
+      const [itemRows, restaurantRows, paymentRows] = await Promise.all([
         getFoodOrderItems(orderRows.map((order) => order.id)),
         getRestaurants(),
+        getOrderPayments('food', orderRows.map((order) => order.id)),
       ]);
 
       setFoodOrders(orderRows);
       setFoodOrderItems(itemRows);
+      setOrderPayments((currentPayments) => mergeOrderPayments(currentPayments, paymentRows, 'food'));
       setRestaurants(restaurantRows);
     } catch (error) {
       setFoodErrorMessage(`Unable to load food orders. ${getErrorMessage(error)}`);
@@ -563,9 +572,15 @@ export function App() {
   const loadPartnerOrders = useCallback(async () => {
     try {
       const orderRows = await getPartnerOrders(partnerOrderFilter);
-      const itemRows = await getPartnerOrderItems(orderRows.map((order) => order.id));
+      const [itemRows, paymentRows] = await Promise.all([
+        getPartnerOrderItems(orderRows.map((order) => order.id)),
+        getOrderPayments('partner', orderRows.map((order) => order.id)),
+      ]);
       setPartnerOrders(orderRows);
       setPartnerOrderItems(itemRows);
+      setOrderPayments((currentPayments) =>
+        mergeOrderPayments(currentPayments, paymentRows, 'partner')
+      );
     } catch (error) {
       setMarketplaceErrorMessage(`Unable to load partner orders. ${getErrorMessage(error)}`);
     }
@@ -855,6 +870,13 @@ export function App() {
   }
 
   async function handleFoodRiderAssignment(foodOrderId: string, riderId: string) {
+    const foodOrder = foodOrders.find((order) => order.id === foodOrderId);
+
+    if (riderId && !isPaymentPaid(foodOrder?.payment_status)) {
+      setFoodErrorMessage('Confirm payment before assigning a rider to this food order.');
+      return;
+    }
+
     setUpdatingFoodOrderId(foodOrderId);
     setFoodErrorMessage('');
     setSuccessMessage('');
@@ -871,6 +893,39 @@ export function App() {
       setFoodErrorMessage(`Unable to assign rider to food order. ${getErrorMessage(error)}`);
     } finally {
       setUpdatingFoodOrderId('');
+    }
+  }
+
+  async function handleFoodPaymentStatusChange(
+    foodOrderId: string,
+    status: 'paid' | 'rejected'
+  ) {
+    const paymentKey = getPaymentKey('food', foodOrderId);
+
+    setUpdatingPaymentKey(paymentKey);
+    setFoodErrorMessage('');
+    setSuccessMessage('');
+
+    try {
+      const updatedFoodOrder = await updateFoodOrderPaymentStatus(
+        foodOrderId,
+        status,
+        paymentNotes[paymentKey] ?? ''
+      );
+
+      setFoodOrders((currentFoodOrders) =>
+        currentFoodOrders.map((foodOrder) =>
+          foodOrder.id === foodOrderId ? updatedFoodOrder : foodOrder
+        )
+      );
+      setSuccessMessage(
+        status === 'paid' ? 'Food order payment confirmed.' : 'Food order payment rejected.'
+      );
+      await loadFoodOrders({ showLoading: false });
+    } catch (error) {
+      setFoodErrorMessage(`Unable to update food payment. ${getErrorMessage(error)}`);
+    } finally {
+      setUpdatingPaymentKey('');
     }
   }
 
@@ -907,6 +962,13 @@ export function App() {
   }
 
   async function handlePartnerOrderRiderAssignment(partnerOrderId: string, riderId: string) {
+    const partnerOrder = partnerOrders.find((order) => order.id === partnerOrderId);
+
+    if (riderId && !isPaymentPaid(partnerOrder?.payment_status)) {
+      setMarketplaceErrorMessage('Confirm payment before assigning a rider to this partner order.');
+      return;
+    }
+
     setUpdatingPartnerOrderId(partnerOrderId);
     setMarketplaceErrorMessage('');
     setMarketplaceMessage('');
@@ -927,6 +989,43 @@ export function App() {
       setMarketplaceErrorMessage(`Unable to assign rider to partner order. ${getErrorMessage(error)}`);
     } finally {
       setUpdatingPartnerOrderId('');
+    }
+  }
+
+  async function handlePartnerOrderPaymentStatusChange(
+    partnerOrderId: string,
+    status: 'paid' | 'rejected'
+  ) {
+    const paymentKey = getPaymentKey('partner', partnerOrderId);
+
+    setUpdatingPaymentKey(paymentKey);
+    setMarketplaceErrorMessage('');
+    setMarketplaceMessage('');
+
+    try {
+      const updatedPartnerOrder = await updatePartnerOrderPaymentStatus(
+        partnerOrderId,
+        status,
+        paymentNotes[paymentKey] ?? ''
+      );
+
+      setPartnerOrders((currentOrders) =>
+        currentOrders.map((order) =>
+          order.id === partnerOrderId ? updatedPartnerOrder : order
+        )
+      );
+      setMarketplaceMessage(
+        status === 'paid' ? 'Partner order payment confirmed.' : 'Partner order payment rejected.'
+      );
+      await loadPartnerOrders();
+
+      if (previewPartnerId) {
+        await loadPreviewPartnerOrders(previewPartnerId);
+      }
+    } catch (error) {
+      setMarketplaceErrorMessage(`Unable to update partner payment. ${getErrorMessage(error)}`);
+    } finally {
+      setUpdatingPaymentKey('');
     }
   }
 
@@ -3027,6 +3126,7 @@ export function App() {
                       <div className="entity-list">
                         {previewPartnerOrders.slice(0, 5).map((order) => {
                           const locationLinks = getPartnerOrderLocationLinks(order, businessPartners);
+                          const isPaid = isPaymentPaid(order.payment_status);
 
                           return (
                             <article className="preview-product-card" key={order.id}>
@@ -3047,6 +3147,9 @@ export function App() {
                                   <span className="status-pill active">
                                     {partnerOrderStatusLabels[order.status]}
                                   </span>
+                                  <span className={isPaid ? 'status-pill active' : 'status-pill'}>
+                                    {isPaid ? 'Paid' : `Payment: ${toTitleCase(order.payment_status)}`}
+                                  </span>
                                   <span className={order.assigned_rider_id ? 'status-pill active' : 'status-pill'}>
                                     {getRiderName(order.assigned_rider_id, riders)}
                                   </span>
@@ -3055,7 +3158,7 @@ export function App() {
                               <div className="action-row">
                                 <button
                                   className="secondary-button"
-                                  disabled={updatingPartnerOrderId === order.id}
+                                  disabled={updatingPartnerOrderId === order.id || !isPaid}
                                   type="button"
                                   onClick={() =>
                                     void handlePartnerOrderStatusChange(order.id, 'accepted')
@@ -3064,7 +3167,7 @@ export function App() {
                                 </button>
                                 <button
                                   className="secondary-button"
-                                  disabled={updatingPartnerOrderId === order.id}
+                                  disabled={updatingPartnerOrderId === order.id || !isPaid}
                                   type="button"
                                   onClick={() =>
                                     void handlePartnerOrderStatusChange(order.id, 'preparing')
@@ -3073,7 +3176,7 @@ export function App() {
                                 </button>
                                 <button
                                   className="secondary-button"
-                                  disabled={updatingPartnerOrderId === order.id}
+                                  disabled={updatingPartnerOrderId === order.id || !isPaid}
                                   type="button"
                                   onClick={() =>
                                     void handlePartnerOrderStatusChange(order.id, 'picked_up')
@@ -3657,7 +3760,12 @@ export function App() {
                 </tr>
               </thead>
               <tbody>
-                {foodOrders.map((foodOrder) => (
+                {foodOrders.map((foodOrder) => {
+                  const paymentKey = getPaymentKey('food', foodOrder.id);
+                  const isPaid = isPaymentPaid(foodOrder.payment_status);
+                  const paymentRecord = getLatestOrderPayment(orderPayments, 'food', foodOrder.id);
+
+                  return (
                   <tr key={foodOrder.id}>
                     <td>{foodOrder.customer_name || 'Customer'}</td>
                     <td>{foodOrder.customer_phone || 'No phone'}</td>
@@ -3673,13 +3781,34 @@ export function App() {
                     <td>{formatOptionalDistance(foodOrder.delivery_distance_km)}</td>
                     <td>{formatCurrency(Number(foodOrder.delivery_fee ?? 0))}</td>
                     <td>{formatCurrency(Number(foodOrder.order_total ?? foodOrder.total_amount ?? 0))}</td>
-                    <td>{foodOrder.payment_method}</td>
+                    <td>
+                      <PaymentReviewControls
+                        amount={Number(foodOrder.order_total ?? foodOrder.total_amount ?? 0)}
+                        isUpdating={updatingPaymentKey === paymentKey}
+                        notes={paymentNotes[paymentKey] ?? foodOrder.payment_notes ?? ''}
+                        paymentMethod={foodOrder.payment_method}
+                        paymentRecord={paymentRecord}
+                        paymentStatus={foodOrder.payment_status}
+                        proofUrl={foodOrder.payment_proof_url}
+                        referenceNumber={foodOrder.payment_reference}
+                        submittedAt={foodOrder.payment_submitted_at}
+                        onConfirm={() => void handleFoodPaymentStatusChange(foodOrder.id, 'paid')}
+                        onNotesChange={(value) =>
+                          setPaymentNotes((currentNotes) => ({
+                            ...currentNotes,
+                            [paymentKey]: value,
+                          }))
+                        }
+                        onReject={() => void handleFoodPaymentStatusChange(foodOrder.id, 'rejected')}
+                      />
+                    </td>
                     <td>{getRiderName(foodOrder.assigned_rider_id, riders)}</td>
                     <td>{formatOptionalDate(foodOrder.latest_rider_location_updated_at)}</td>
                     <td>
                       <select
                         className="rider-select"
-                        disabled={updatingFoodOrderId === foodOrder.id}
+                        disabled={updatingFoodOrderId === foodOrder.id || !isPaid}
+                        title={isPaid ? 'Assign rider' : 'Confirm payment before assigning a rider'}
                         value={foodOrder.assigned_rider_id ?? ''}
                         onChange={(event) =>
                           handleFoodRiderAssignment(foodOrder.id, event.target.value)
@@ -3712,7 +3841,8 @@ export function App() {
                     </td>
                     <td>{formatDate(foodOrder.created_at)}</td>
                   </tr>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
           </div>
@@ -3769,6 +3899,13 @@ export function App() {
               <tbody>
                 {partnerOrders.map((partnerOrder) => {
                   const locationLinks = getPartnerOrderLocationLinks(partnerOrder, businessPartners);
+                  const paymentKey = getPaymentKey('partner', partnerOrder.id);
+                  const isPaid = isPaymentPaid(partnerOrder.payment_status);
+                  const paymentRecord = getLatestOrderPayment(
+                    orderPayments,
+                    'partner',
+                    partnerOrder.id
+                  );
 
                   return (
                     <tr key={partnerOrder.id}>
@@ -3793,12 +3930,37 @@ export function App() {
                       <td>{formatCurrency(Number(partnerOrder.subtotal ?? 0))}</td>
                       <td>{formatCurrency(Number(partnerOrder.delivery_fee ?? 0))}</td>
                       <td>{formatCurrency(Number(partnerOrder.total_amount ?? 0))}</td>
-                      <td>{toTitleCase(partnerOrder.payment_method || 'cash')}</td>
+                      <td>
+                        <PaymentReviewControls
+                          amount={Number(partnerOrder.total_amount ?? 0)}
+                          isUpdating={updatingPaymentKey === paymentKey}
+                          notes={paymentNotes[paymentKey] ?? partnerOrder.payment_notes ?? ''}
+                          paymentMethod={partnerOrder.payment_method || 'GCash'}
+                          paymentRecord={paymentRecord}
+                          paymentStatus={partnerOrder.payment_status}
+                          proofUrl={partnerOrder.payment_proof_url}
+                          referenceNumber={partnerOrder.payment_reference}
+                          submittedAt={partnerOrder.payment_submitted_at}
+                          onConfirm={() =>
+                            void handlePartnerOrderPaymentStatusChange(partnerOrder.id, 'paid')
+                          }
+                          onNotesChange={(value) =>
+                            setPaymentNotes((currentNotes) => ({
+                              ...currentNotes,
+                              [paymentKey]: value,
+                            }))
+                          }
+                          onReject={() =>
+                            void handlePartnerOrderPaymentStatusChange(partnerOrder.id, 'rejected')
+                          }
+                        />
+                      </td>
                       <td>{getRiderName(partnerOrder.assigned_rider_id, riders)}</td>
                       <td>
                         <select
                           className="rider-select"
-                          disabled={updatingPartnerOrderId === partnerOrder.id}
+                          disabled={updatingPartnerOrderId === partnerOrder.id || !isPaid}
+                          title={isPaid ? 'Assign rider' : 'Confirm payment before assigning a rider'}
                           value={partnerOrder.assigned_rider_id ?? ''}
                           onChange={(event) =>
                             handlePartnerOrderRiderAssignment(partnerOrder.id, event.target.value)
@@ -4546,6 +4708,90 @@ function PartnerSummaryCard({ label, value }: { label: string; value: number }) 
   );
 }
 
+type PaymentReviewControlsProps = {
+  amount: number;
+  isUpdating: boolean;
+  notes: string;
+  paymentMethod: string;
+  paymentRecord?: AdminOrderPayment | null;
+  paymentStatus: string;
+  proofUrl?: string | null;
+  referenceNumber?: string | null;
+  submittedAt?: string | null;
+  onConfirm: () => void;
+  onNotesChange: (value: string) => void;
+  onReject: () => void;
+};
+
+function PaymentReviewControls({
+  amount,
+  isUpdating,
+  notes,
+  paymentMethod,
+  paymentRecord,
+  paymentStatus,
+  proofUrl,
+  referenceNumber,
+  submittedAt,
+  onConfirm,
+  onNotesChange,
+  onReject,
+}: PaymentReviewControlsProps) {
+  const isPaid = isPaymentPaid(paymentStatus);
+  const isRejected = paymentStatus === 'rejected';
+
+  return (
+    <div className="payment-review-cell">
+      <div className="payment-review-header">
+        <span className={isPaid ? 'status-pill active' : 'status-pill'}>
+          {toTitleCase(paymentStatus || 'pending_payment')}
+        </span>
+        <strong>{formatCurrency(amount)}</strong>
+      </div>
+      <p>{toTitleCase(paymentMethod || 'GCash')}</p>
+      <p>Ref: {referenceNumber || 'No reference yet'}</p>
+      <p>Submitted: {formatOptionalDate(submittedAt)}</p>
+      {paymentRecord ? (
+        <p>
+          Ledger: {toTitleCase(paymentRecord.status)} - Ref{' '}
+          {paymentRecord.reference_number || 'No reference'}
+        </p>
+      ) : (
+        <p>Ledger: no row yet</p>
+      )}
+      {proofUrl ? (
+        <a href={proofUrl} rel="noreferrer" target="_blank">
+          View proof
+        </a>
+      ) : (
+        <p>Proof: optional</p>
+      )}
+      <textarea
+        aria-label="Payment notes"
+        placeholder="Payment notes"
+        value={notes}
+        onChange={(event) => onNotesChange(event.target.value)}
+      />
+      <div className="payment-action-row">
+        <button
+          className="primary-action-button compact-button"
+          disabled={isUpdating || isPaid}
+          type="button"
+          onClick={onConfirm}>
+          {isUpdating ? 'Saving...' : 'Confirm'}
+        </button>
+        <button
+          className="secondary-button compact-button"
+          disabled={isUpdating || isRejected}
+          type="button"
+          onClick={onReject}>
+          Reject
+        </button>
+      </div>
+    </div>
+  );
+}
+
 type LatestPartnerOrderCardProps = {
   isUpdating?: boolean;
   notification?: AdminPartnerOrderNotification | null;
@@ -4592,6 +4838,7 @@ function LatestPartnerOrderCard({
         <PreviewField label="Customer" value={order.customer_name || 'Customer'} />
         <PreviewField label="Phone" value={order.customer_phone || 'No phone'} />
         <PreviewField label="Payment" value={toTitleCase(order.payment_method || 'cash')} />
+        <PreviewField label="Payment status" value={toTitleCase(order.payment_status)} />
         <PreviewField label="Delivery address" value={order.delivery_address || 'No address'} />
       </div>
 
@@ -5047,7 +5294,7 @@ function getPartnerName(partnerId: string, partners: AdminBusinessPartner[]) {
 }
 
 function getLatestPartnerOrder(orders: AdminPartnerOrder[]) {
-  return [...orders].sort((left, right) => {
+  return orders.filter((order) => isPaymentPaid(order.payment_status)).sort((left, right) => {
     return new Date(right.created_at).getTime() - new Date(left.created_at).getTime();
   })[0] ?? null;
 }
@@ -5056,13 +5303,50 @@ function getPartnerLatestOrderMetrics(
   orders: AdminPartnerOrder[],
   unreadNotifications: number
 ): PartnerLatestOrderMetrics {
+  const paidOrders = orders.filter((order) => isPaymentPaid(order.payment_status));
+
   return {
-    completedToday: orders.filter((order) => order.status === 'completed' && isToday(order.updated_at)).length,
-    pending: orders.filter((order) => order.status === 'pending').length,
-    preparing: orders.filter((order) => order.status === 'preparing').length,
-    totalToday: orders.filter((order) => isToday(order.created_at)).length,
+    completedToday: paidOrders.filter((order) => order.status === 'completed' && isToday(order.updated_at)).length,
+    pending: paidOrders.filter((order) => order.status === 'pending').length,
+    preparing: paidOrders.filter((order) => order.status === 'preparing').length,
+    totalToday: paidOrders.filter((order) => isToday(order.created_at)).length,
     unreadNotifications,
   };
+}
+
+function getPaymentKey(orderType: 'food' | 'partner', orderId: string) {
+  return `${orderType}:${orderId}`;
+}
+
+function mergeOrderPayments(
+  currentPayments: AdminOrderPayment[],
+  nextPayments: AdminOrderPayment[],
+  orderType: 'food' | 'partner' | 'ride'
+) {
+  const nextOrderIds = new Set(nextPayments.map((payment) => payment.order_id));
+  const keptPayments = currentPayments.filter(
+    (payment) => payment.order_type !== orderType || !nextOrderIds.has(payment.order_id)
+  );
+
+  return [...keptPayments, ...nextPayments];
+}
+
+function getLatestOrderPayment(
+  payments: AdminOrderPayment[],
+  orderType: 'food' | 'partner' | 'ride',
+  orderId: string
+) {
+  return (
+    payments
+      .filter((payment) => payment.order_type === orderType && payment.order_id === orderId)
+      .sort((left, right) => {
+        return new Date(right.created_at).getTime() - new Date(left.created_at).getTime();
+      })[0] ?? null
+  );
+}
+
+function isPaymentPaid(paymentStatus: string | null | undefined) {
+  return paymentStatus === 'paid';
 }
 
 function getPartnerOrderNotification(

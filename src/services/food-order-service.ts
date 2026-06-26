@@ -22,6 +22,7 @@ export type CreateFoodOrderInput = {
   orderSubtotal?: number | null;
   orderTotal?: number | null;
   paymentMethod: PaymentMethod;
+  paymentReference?: string | null;
   restaurantId: string;
   serviceFee?: number | null;
   subtotal: number;
@@ -40,6 +41,11 @@ export async function createFoodOrder(input: CreateFoodOrderInput) {
     throw new Error('Your cart is empty.');
   }
 
+  const paymentReference = normalizeOptionalText(input.paymentReference);
+  const paymentSubmittedAt = paymentReference ? new Date().toISOString() : null;
+  const paymentStatus: 'pending_payment' | 'payment_submitted' = paymentReference
+    ? 'payment_submitted'
+    : 'pending_payment';
   const orderPayload: TablesInsert<'food_orders'> = {
     customer_id: input.customerId ?? null,
     customer_name: input.customerName,
@@ -53,6 +59,9 @@ export async function createFoodOrder(input: CreateFoodOrderInput) {
     order_subtotal: input.orderSubtotal ?? input.subtotal,
     order_total: input.orderTotal ?? input.total,
     payment_method: input.paymentMethod,
+    payment_reference: paymentReference,
+    payment_status: paymentStatus,
+    payment_submitted_at: paymentSubmittedAt,
     restaurant_id: input.restaurantId,
     service_fee: input.serviceFee ?? null,
     status: 'pending',
@@ -105,10 +114,46 @@ export async function createFoodOrder(input: CreateFoodOrderInput) {
     throw itemsError;
   }
 
+  await createFoodOrderPaymentRecord(order.id, {
+    amount: input.orderTotal ?? input.total,
+    paymentMethod: input.paymentMethod,
+    paymentReference: input.paymentReference ?? null,
+    submittedAt: paymentSubmittedAt ?? new Date().toISOString(),
+    status: paymentStatus,
+  });
+
   return {
     order,
     orderItems: orderItems ?? [],
   };
+}
+
+async function createFoodOrderPaymentRecord(
+  orderId: string,
+  input: {
+    amount: number;
+    paymentMethod: PaymentMethod;
+    paymentReference?: string | null;
+    status: 'pending_payment' | 'payment_submitted';
+    submittedAt: string;
+  }
+) {
+  const { error } = await supabase.from('order_payments').insert({
+    amount: input.amount,
+    order_id: orderId,
+    order_type: 'food',
+    payment_method: input.paymentMethod,
+    reference_number: normalizeOptionalText(input.paymentReference),
+    status: input.status,
+    submitted_at: input.submittedAt,
+    updated_at: input.submittedAt,
+  });
+
+  if (error) {
+    if (__DEV__) {
+      console.warn('FOOD_ORDER_PAYMENT_LEDGER_SKIPPED', error);
+    }
+  }
 }
 
 export async function getFoodOrderById(foodOrderId: string) {
@@ -252,4 +297,10 @@ function isUuid(value: string) {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
     value
   );
+}
+
+function normalizeOptionalText(value: string | null | undefined) {
+  const trimmedValue = value?.trim() ?? '';
+
+  return trimmedValue || null;
 }

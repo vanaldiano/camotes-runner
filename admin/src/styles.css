@@ -486,6 +486,54 @@ td {
   vertical-align: middle;
 }
 
+.payment-review-cell {
+  display: grid;
+  min-width: 240px;
+  gap: 7px;
+}
+
+.payment-review-cell p {
+  margin: 0;
+  color: #66776b;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.payment-review-cell a {
+  color: #0b6b22;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.payment-review-cell textarea {
+  min-height: 64px;
+  width: 100%;
+  border: 1px solid #dce8df;
+  border-radius: 12px;
+  padding: 8px 10px;
+  background: #f6f8f7;
+  color: #12321f;
+  font-size: 12px;
+  font-weight: 800;
+  resize: vertical;
+}
+
+.payment-review-header,
+.payment-action-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.compact-button {
+  min-height: 34px;
+  border-radius: 12px;
+  padding: 0 10px;
+  font-size: 12px;
+}
+
 .address-cell {
   display: grid;
   gap: 4px;

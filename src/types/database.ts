@@ -9,6 +9,13 @@ export type BookingStatus =
   | 'cancelled';
 
 export type PaymentMethod = 'Cash' | 'GCash';
+export type PaymentStatus =
+  | 'pending_payment'
+  | 'payment_submitted'
+  | 'paid'
+  | 'rejected'
+  | 'refunded'
+  | 'cash_on_delivery';
 export type UserRole = 'customer' | 'rider' | 'admin';
 export type NotificationRecipientType = 'customer' | 'rider' | 'admin' | 'unknown';
 export type NotificationLogStatus = 'queued' | 'sent' | 'failed' | 'skipped';
@@ -819,7 +826,15 @@ export type Database = {
           notes: string | null;
           partner_id: string;
           partner_status: string;
+          payment_confirmed_at: string | null;
+          payment_confirmed_by: string | null;
           payment_method: string;
+          payment_notes: string | null;
+          payment_proof_path: string | null;
+          payment_proof_url: string | null;
+          payment_reference: string | null;
+          payment_status: PaymentStatus;
+          payment_submitted_at: string | null;
           rider_status: string | null;
           service_fee: number;
           status: PartnerOrderStatus;
@@ -847,7 +862,15 @@ export type Database = {
           notes?: string | null;
           partner_id: string;
           partner_status?: string;
+          payment_confirmed_at?: string | null;
+          payment_confirmed_by?: string | null;
           payment_method?: string;
+          payment_notes?: string | null;
+          payment_proof_path?: string | null;
+          payment_proof_url?: string | null;
+          payment_reference?: string | null;
+          payment_status?: PaymentStatus;
+          payment_submitted_at?: string | null;
           rider_status?: string | null;
           service_fee?: number;
           status?: PartnerOrderStatus;
@@ -875,7 +898,15 @@ export type Database = {
           notes?: string | null;
           partner_id?: string;
           partner_status?: string;
+          payment_confirmed_at?: string | null;
+          payment_confirmed_by?: string | null;
           payment_method?: string;
+          payment_notes?: string | null;
+          payment_proof_path?: string | null;
+          payment_proof_url?: string | null;
+          payment_reference?: string | null;
+          payment_status?: PaymentStatus;
+          payment_submitted_at?: string | null;
           rider_status?: string | null;
           service_fee?: number;
           status?: PartnerOrderStatus;
@@ -903,6 +934,60 @@ export type Database = {
             referencedColumns: ['id'];
           },
         ];
+      };
+      order_payments: {
+        Row: {
+          amount: number;
+          confirmed_at: string | null;
+          confirmed_by: string | null;
+          created_at: string;
+          id: string;
+          notes: string | null;
+          order_id: string;
+          order_type: string;
+          payment_method: string;
+          proof_path: string | null;
+          proof_url: string | null;
+          reference_number: string | null;
+          status: PaymentStatus;
+          submitted_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          amount: number;
+          confirmed_at?: string | null;
+          confirmed_by?: string | null;
+          created_at?: string;
+          id?: string;
+          notes?: string | null;
+          order_id: string;
+          order_type: string;
+          payment_method: string;
+          proof_path?: string | null;
+          proof_url?: string | null;
+          reference_number?: string | null;
+          status?: PaymentStatus;
+          submitted_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          amount?: number;
+          confirmed_at?: string | null;
+          confirmed_by?: string | null;
+          created_at?: string;
+          id?: string;
+          notes?: string | null;
+          order_id?: string;
+          order_type?: string;
+          payment_method?: string;
+          proof_path?: string | null;
+          proof_url?: string | null;
+          reference_number?: string | null;
+          status?: PaymentStatus;
+          submitted_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [];
       };
       partner_order_items: {
         Row: {
@@ -1155,7 +1240,15 @@ export type Database = {
           notes: string | null;
           order_subtotal: number | null;
           order_total: number | null;
+          payment_confirmed_at: string | null;
+          payment_confirmed_by: string | null;
           payment_method: PaymentMethod;
+          payment_notes: string | null;
+          payment_proof_path: string | null;
+          payment_proof_url: string | null;
+          payment_reference: string | null;
+          payment_status: PaymentStatus;
+          payment_submitted_at: string | null;
           partner_id: string | null;
           partner_notification_status: string;
           partner_notified_at: string | null;
@@ -1181,7 +1274,15 @@ export type Database = {
           notes?: string | null;
           order_subtotal?: number | null;
           order_total?: number | null;
+          payment_confirmed_at?: string | null;
+          payment_confirmed_by?: string | null;
           payment_method?: PaymentMethod;
+          payment_notes?: string | null;
+          payment_proof_path?: string | null;
+          payment_proof_url?: string | null;
+          payment_reference?: string | null;
+          payment_status?: PaymentStatus;
+          payment_submitted_at?: string | null;
           partner_id?: string | null;
           partner_notification_status?: string;
           partner_notified_at?: string | null;
@@ -1207,7 +1308,15 @@ export type Database = {
           notes?: string | null;
           order_subtotal?: number | null;
           order_total?: number | null;
+          payment_confirmed_at?: string | null;
+          payment_confirmed_by?: string | null;
           payment_method?: PaymentMethod;
+          payment_notes?: string | null;
+          payment_proof_path?: string | null;
+          payment_proof_url?: string | null;
+          payment_reference?: string | null;
+          payment_status?: PaymentStatus;
+          payment_submitted_at?: string | null;
           partner_id?: string | null;
           partner_notification_status?: string;
           partner_notified_at?: string | null;
@@ -1393,6 +1502,7 @@ export type Database = {
           p_notes: string | null;
           p_partner_id: string;
           p_payment_method: string | null;
+          p_payment_reference?: string | null;
           p_service_fee?: number | null;
           p_total_amount?: number | null;
         };

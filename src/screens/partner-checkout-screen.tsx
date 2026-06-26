@@ -54,6 +54,8 @@ const deliveryLocationPresets: DeliveryLocationPreset[] = [
 ];
 const LOCATION_UNAVAILABLE_MESSAGE =
   'We couldn’t get your location. Please choose a delivery location or enter it manually.';
+const gcashPaymentLabel = 'GCash / Online Payment';
+const gcashPaymentNumber = '09XX XXX XXXX';
 
 export function PartnerCheckoutScreen({ partnerId }: PartnerCheckoutScreenProps) {
   const { clearCart, items, partnerId: cartPartnerId, partnerName } = usePartnerCart();
@@ -66,6 +68,7 @@ export function PartnerCheckoutScreen({ partnerId }: PartnerCheckoutScreenProps)
   const [isLocating, setIsLocating] = useState(false);
   const [locationMessage, setLocationMessage] = useState('');
   const [notes, setNotes] = useState('Please call when you arrive.');
+  const [paymentReference, setPaymentReference] = useState('');
   const [isSaving, setIsSaving] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
   const [feeCalculation, setFeeCalculation] = useState<PartnerDeliveryFeeCalculation | null>(null);
@@ -208,6 +211,11 @@ export function PartnerCheckoutScreen({ partnerId }: PartnerCheckoutScreenProps)
       return;
     }
 
+    if (!paymentReference.trim()) {
+      setErrorMessage('Please enter your GCash reference number after payment.');
+      return;
+    }
+
     setIsSaving(true);
     setErrorMessage('');
 
@@ -225,7 +233,8 @@ export function PartnerCheckoutScreen({ partnerId }: PartnerCheckoutScreenProps)
         notes: notes.trim(),
         partnerId,
         partnerName: partner?.name ?? partnerName ?? 'Partner shop',
-        paymentMethod: 'cash',
+        paymentMethod: 'GCash',
+        paymentReference: paymentReference.trim(),
         serviceFee: totals.serviceFee,
         totalAmount: totals.totalAmount,
       });
@@ -331,11 +340,30 @@ export function PartnerCheckoutScreen({ partnerId }: PartnerCheckoutScreenProps)
       </CheckoutCard>
 
       <CheckoutCard title="Payment Method">
+        <View style={styles.paymentInstructionCard}>
+          <Text style={styles.paymentInstructionTitle}>Pay Camotes Runner first</Text>
+          <Text style={styles.paymentInstructionText}>
+            Send the total amount by GCash, then enter the reference number below.
+          </Text>
+          <View style={styles.gcashBox}>
+            <Text style={styles.gcashLabel}>Camotes Runner GCash</Text>
+            <Text style={styles.gcashNumber}>{gcashPaymentNumber}</Text>
+            <Text style={styles.gcashQrPlaceholder}>QR code placeholder</Text>
+          </View>
+          <Text style={styles.paymentPendingText}>
+            Your order will be sent to the shop after payment is confirmed.
+          </Text>
+        </View>
         <View style={styles.paymentRow}>
           <View style={[styles.paymentOption, styles.selectedPayment]}>
-            <Text style={[styles.paymentText, styles.selectedPaymentText]}>Cash / Manual Payment</Text>
+            <Text style={[styles.paymentText, styles.selectedPaymentText]}>{gcashPaymentLabel}</Text>
           </View>
         </View>
+        <CheckoutInput
+          placeholder="GCash reference number"
+          value={paymentReference}
+          onChangeText={setPaymentReference}
+        />
       </CheckoutCard>
 
       <CheckoutCard title="Order Summary">
@@ -596,6 +624,29 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '900',
   },
+  gcashBox: {
+    backgroundColor: BrandColors.white,
+    borderColor: BrandColors.yellow,
+    borderRadius: 18,
+    borderWidth: 1,
+    gap: 4,
+    padding: 12,
+  },
+  gcashLabel: {
+    color: BrandColors.mutedInk,
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  gcashNumber: {
+    color: BrandColors.darkGreen,
+    fontSize: 18,
+    fontWeight: '900',
+  },
+  gcashQrPlaceholder: {
+    color: BrandColors.green,
+    fontSize: 12,
+    fontWeight: '900',
+  },
   multilineInput: {
     minHeight: 104,
     paddingTop: 16,
@@ -624,6 +675,31 @@ const styles = StyleSheet.create({
     color: BrandColors.mutedInk,
     fontSize: 15,
     fontWeight: '900',
+  },
+  paymentInstructionCard: {
+    backgroundColor: BrandColors.paleYellow,
+    borderColor: BrandColors.yellow,
+    borderRadius: 20,
+    borderWidth: 1,
+    gap: 10,
+    padding: 14,
+  },
+  paymentInstructionText: {
+    color: BrandColors.ink,
+    fontSize: 13,
+    fontWeight: '800',
+    lineHeight: 19,
+  },
+  paymentInstructionTitle: {
+    color: BrandColors.darkGreen,
+    fontSize: 16,
+    fontWeight: '900',
+  },
+  paymentPendingText: {
+    color: BrandColors.darkGreen,
+    fontSize: 12,
+    fontWeight: '900',
+    lineHeight: 18,
   },
   pressed: {
     opacity: 0.84,

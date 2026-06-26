@@ -9,6 +9,7 @@ import {
 import type {
   BookingStatus,
   FoodOrderStatus,
+  PaymentStatus,
   PartnerOrderStatus,
   Tables,
   TablesInsert,
@@ -43,6 +44,7 @@ export type AdminFoodOrder = Tables<'food_orders'> & {
   latest_rider_location_updated_at?: string | null;
 };
 export type AdminFoodOrderItem = Tables<'food_order_items'>;
+export type AdminOrderPayment = Tables<'order_payments'>;
 export type RestaurantInput = Pick<
   TablesInsert<'restaurants'>,
   | 'address'
@@ -603,6 +605,28 @@ export async function getPartnerOrderItems(orderIds: string[]) {
   return data ?? [];
 }
 
+export async function getOrderPayments(
+  orderType: 'food' | 'partner' | 'ride',
+  orderIds: string[]
+) {
+  if (orderIds.length === 0) {
+    return [];
+  }
+
+  const { data, error } = await supabase
+    .from('order_payments')
+    .select('*')
+    .eq('order_type', orderType)
+    .in('order_id', orderIds)
+    .order('created_at', { ascending: false });
+
+  if (error) {
+    throw error;
+  }
+
+  return data ?? [];
+}
+
 export async function updatePartnerOrderStatus(
   orderId: string,
   status: PartnerOrderStatus
@@ -646,7 +670,60 @@ export async function updatePartnerOrderStatus(
   return data;
 }
 
+export async function updatePartnerOrderPaymentStatus(
+  orderId: string,
+  status: Extract<PaymentStatus, 'paid' | 'rejected'>,
+  notes: string
+) {
+  const now = new Date().toISOString();
+  const adminUserId = status === 'paid' ? await getCurrentAdminUserId() : null;
+  const { data, error } = await supabase
+    .from('partner_orders')
+    .update({
+      payment_confirmed_at: status === 'paid' ? now : null,
+      payment_confirmed_by: adminUserId,
+      payment_notes: normalizeOptionalText(notes),
+      payment_status: status,
+      updated_at: now,
+    })
+    .eq('id', orderId)
+    .select('*')
+    .maybeSingle();
+
+  if (error) {
+    throw error;
+  }
+
+  if (!data) {
+    throw new Error(`Partner order ${orderId} was not found.`);
+  }
+
+  await updateOrderPaymentLedger('partner', orderId, status, notes, now, adminUserId);
+
+  return data;
+}
+
 export async function assignPartnerOrderRider(orderId: string, riderId: string | null) {
+  if (riderId) {
+    const { data: order, error: orderError } = await supabase
+      .from('partner_orders')
+      .select('payment_status')
+      .eq('id', orderId)
+      .maybeSingle();
+
+    if (orderError) {
+      throw orderError;
+    }
+
+    if (!order) {
+      throw new Error(`Partner order ${orderId} was not found.`);
+    }
+
+    if (order.payment_status !== 'paid') {
+      throw new Error('Confirm payment before assigning a rider to this partner order.');
+    }
+  }
+
   const { data, error } = await supabase
     .from('partner_orders')
     .update({
@@ -1205,7 +1282,60 @@ export async function updateFoodOrderStatus(foodOrderId: string, status: FoodOrd
   return data;
 }
 
+export async function updateFoodOrderPaymentStatus(
+  foodOrderId: string,
+  status: Extract<PaymentStatus, 'paid' | 'rejected'>,
+  notes: string
+) {
+  const now = new Date().toISOString();
+  const adminUserId = status === 'paid' ? await getCurrentAdminUserId() : null;
+  const { data, error } = await supabase
+    .from('food_orders')
+    .update({
+      payment_confirmed_at: status === 'paid' ? now : null,
+      payment_confirmed_by: adminUserId,
+      payment_notes: normalizeOptionalText(notes),
+      payment_status: status,
+      updated_at: now,
+    })
+    .eq('id', foodOrderId)
+    .select('*')
+    .maybeSingle();
+
+  if (error) {
+    throw error;
+  }
+
+  if (!data) {
+    throw new Error(`Food order ${foodOrderId} was not found.`);
+  }
+
+  await updateOrderPaymentLedger('food', foodOrderId, status, notes, now, adminUserId);
+
+  return data;
+}
+
 export async function assignRiderToFoodOrder(foodOrderId: string, riderId: string | null) {
+  if (riderId) {
+    const { data: order, error: orderError } = await supabase
+      .from('food_orders')
+      .select('payment_status')
+      .eq('id', foodOrderId)
+      .maybeSingle();
+
+    if (orderError) {
+      throw orderError;
+    }
+
+    if (!order) {
+      throw new Error(`Food order ${foodOrderId} was not found.`);
+    }
+
+    if (order.payment_status !== 'paid') {
+      throw new Error('Confirm payment before assigning a rider to this food order.');
+    }
+  }
+
   const { data, error } = await supabase
     .from('food_orders')
     .update({
@@ -1233,4 +1363,41 @@ export async function assignRiderToFoodOrder(foodOrderId: string, riderId: strin
   });
 
   return data;
+}
+
+async function updateOrderPaymentLedger(
+  orderType: 'food' | 'partner' | 'ride',
+  orderId: string,
+  status: Extract<PaymentStatus, 'paid' | 'rejected'>,
+  notes: string,
+  timestamp: string,
+  adminUserId: string | null
+) {
+  const { error } = await supabase
+    .from('order_payments')
+    .update({
+      confirmed_at: status === 'paid' ? timestamp : null,
+      confirmed_by: adminUserId,
+      notes: normalizeOptionalText(notes),
+      status,
+      updated_at: timestamp,
+    })
+    .eq('order_type', orderType)
+    .eq('order_id', orderId);
+
+  if (error) {
+    throw error;
+  }
+}
+
+async function getCurrentAdminUserId() {
+  const { data } = await supabase.auth.getUser();
+
+  return data.user?.id ?? null;
+}
+
+function normalizeOptionalText(value: string | null | undefined) {
+  const trimmedValue = value?.trim() ?? '';
+
+  return trimmedValue || null;
 }
